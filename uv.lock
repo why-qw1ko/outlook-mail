@@ -142,7 +142,7 @@ wheels = [
 ]
 
 [[package]]
-name = "outlook-mail-station"
+name = "outlook-mail"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
