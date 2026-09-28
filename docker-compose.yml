@@ -1,0 +1,15 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: outlook-mail
+    restart: unless-stopped
+    ports:
+      - "8015:8015"
+    env_file:
+      - .env
+    environment:
+      OUTLOOK_MAIL_STATION_DB: ${OUTLOOK_MAIL_STATION_DB:-sqlite:////app/data/outlook_mail_station.db}
+    volumes:
+      - ./data:/app/data
