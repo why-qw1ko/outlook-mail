@@ -275,9 +275,11 @@ GET /api/public/shares/{token}/messages/{message_id}
 - `GET /api/users/{user_id}/api-key`
 - `POST /api/users/{user_id}/api-key/regenerate`
 - `PATCH /api/users/{user_id}`
+- `DELETE /api/users/{user_id}`
 - `GET /api/sites`
 - `POST /api/sites`
 - `PATCH /api/sites/{site_id}`
+- `DELETE /api/sites/{site_id}`
 - `POST /api/accounts/import`
 - `GET /api/accounts`
 - `GET /api/accounts/export`

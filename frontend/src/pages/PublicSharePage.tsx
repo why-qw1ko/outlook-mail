@@ -102,9 +102,9 @@ export function PublicSharePage() {
   const messages = folder === 'inbox' ? data.inbox : data.sent
 
   return (
-    <div className="app-canvas flex min-h-screen flex-col">
+    <div className="app-canvas flex min-h-dvh flex-col">
       <header className="glass-bar border-b border-border">
-        <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-5 py-4">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-3 px-5 py-4">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-soft">
             <Inbox className="h-5 w-5" />
           </div>
