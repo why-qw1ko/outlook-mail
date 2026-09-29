@@ -10,17 +10,13 @@ from typing import Iterator
 from sqlalchemy import inspect
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from .models import AccountSiteUsage, OutlookAccount, Site, StationUser, USER_ROLE_ADMIN, USER_ROLE_USER, generate_station_api_key, utcnow
+from .models import AccountSiteUsage, OutlookAccount, StationUser, USER_ROLE_ADMIN, USER_ROLE_USER, generate_station_api_key, utcnow
 from .passwords import hash_password, is_password_hash, verify_password
 from .settings import ADMIN_PASSWORD, DATABASE_URL
 
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 DEFAULT_POOL_USER_USERNAME = "default"
-DEFAULT_SITES = [
-    ("GPT", "GPT"),
-    ("KIRO", "Kiro"),
-]
 
 
 def _ensure_sqlite_parent_dir() -> None:
@@ -257,43 +253,10 @@ def _assign_legacy_accounts_to_default_user() -> None:
         session.commit()
 
 
-def _ensure_default_sites() -> None:
-    """AI by zb: 为新站点化账号池预置默认站点。"""
-    with Session(engine) as session:
-        existing_sites = {
-            str(site.code or "").strip().upper(): site
-            for site in session.exec(select(Site)).all()
-            if site.code
-        }
-        changed = False
-        for code, name in DEFAULT_SITES:
-            current = existing_sites.get(code)
-            if current:
-                if current.name != name:
-                    current.name = name
-                    current.updated_at = utcnow()
-                    session.add(current)
-                    changed = True
-                continue
-            session.add(
-                Site(
-                    code=code,
-                    name=name,
-                    enabled=True,
-                    created_at=utcnow(),
-                    updated_at=utcnow(),
-                )
-            )
-            changed = True
-        if changed:
-            session.commit()
-
-
 def init_db() -> None:
     """AI by zb: 初始化新站点使用的全部数据库表。"""
     _ensure_sqlite_parent_dir()
     SQLModel.metadata.create_all(engine)
-    _ensure_default_sites()
     _ensure_outlook_account_columns()
     _ensure_station_user_columns()
     _ensure_default_admin_user()

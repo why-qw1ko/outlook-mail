@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from ..auth import require_admin_authorization, require_admin_user
 from ..database import generate_unique_user_api_key, get_session
-from ..models import OutlookAccount, StationUser, USER_ROLE_ADMIN, USER_ROLE_USER, utcnow
+from ..models import AccountSiteUsage, OutlookAccount, StationUser, USER_ROLE_ADMIN, USER_ROLE_USER, utcnow
 from ..passwords import hash_password
-from ..schemas import UserApiKeyResponse, UserCreateRequest, UserItemResponse, UserListResponse, UserUpdateRequest
+from ..schemas import OperationStatusResponse, UserApiKeyResponse, UserCreateRequest, UserItemResponse, UserListResponse, UserUpdateRequest
 from ..services.site_usage_service import count_pool_and_consumed_accounts
 
 
@@ -191,3 +191,36 @@ def update_user(
     session.commit()
     session.refresh(user)
     return _serialize_user(session, user)
+
+
+@router.delete("/{user_id}", response_model=OperationStatusResponse)
+def delete_user(
+    user_id: int,
+    authorization: str | None = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    """AI by zb: 删除用户；不能删管理员或自己，名下邮箱需先转移。"""
+    current_user = require_admin_authorization(authorization)
+    if current_user.role != USER_ROLE_ADMIN:
+        raise HTTPException(status_code=403, detail="无权删除用户")
+    user = _get_user_or_404(session, user_id)
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="不能删除当前登录用户")
+    if user.role == USER_ROLE_ADMIN:
+        raise HTTPException(status_code=400, detail="不能删除管理员用户")
+
+    account_count = len(
+        session.exec(
+            select(OutlookAccount).where(OutlookAccount.owner_user_id == user_id)
+        ).all()
+    )
+    if account_count:
+        raise HTTPException(
+            status_code=400,
+            detail=f"该用户名下仍有 {account_count} 个邮箱，请先转移或删除邮箱",
+        )
+
+    session.exec(delete(AccountSiteUsage).where(AccountSiteUsage.user_id == user_id))
+    session.delete(user)
+    session.commit()
+    return OperationStatusResponse(ok=True, message=f"已删除用户 {user.username}")

@@ -6,7 +6,6 @@ import {
   Copy,
   ExternalLink,
   Import,
-  Inbox,
   Loader2,
   Mail,
   MailPlus,
@@ -50,11 +49,13 @@ import type {
   UserItem,
 } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { MailIllustration } from '@/components/common/MailIllustration'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { MailHtmlFrame } from '@/components/common/MailHtmlFrame'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { Badge, Label, Select } from '@/components/ui/primitives'
-import { Dialog } from '@/components/ui/dialog'
+import { Dialog } from '@/components/common/AppDialog'
 import { useToast } from '@/components/ui/toast'
 import { EmptyState, LoadingState, SearchEmpty } from '@/components/common/states'
 
@@ -63,12 +64,15 @@ const PAGE_SIZE = 50
 export function StationPage() {
   const toast = useToast()
 
+  const [mobilePane, setMobilePane] = useState<'accounts' | 'messages' | 'detail'>('accounts')
   const [accounts, setAccounts] = useState<AccountItem[]>([])
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [page, setPage] = useState(1)
   const [loadingAccounts, setLoadingAccounts] = useState(true)
   const [keyword, setKeyword] = useState('')
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const searchTimer = useRef<number | null>(null)
   const [scope, setScope] = useState<AccountScope>('all')
   const [batchCode, setBatchCode] = useState('')
   const [siteCode, setSiteCode] = useState('')
@@ -91,16 +95,13 @@ export function StationPage() {
   const [moveOpen, setMoveOpen] = useState(false)
   const [siteActionOpen, setSiteActionOpen] = useState<'consume' | 'release' | null>(null)
 
-  const keywordRef = useRef(keyword)
-  keywordRef.current = keyword
-
   const loadAccounts = useCallback(async () => {
     setLoadingAccounts(true)
     try {
       const result = await fetchAccounts({
         page,
         pageSize: PAGE_SIZE,
-        keyword: keywordRef.current,
+        keyword: searchKeyword,
         scope,
         batchCode,
         siteCode,
@@ -113,7 +114,7 @@ export function StationPage() {
     } finally {
       setLoadingAccounts(false)
     }
-  }, [page, scope, batchCode, siteCode, toast])
+  }, [page, scope, batchCode, siteCode, searchKeyword, toast])
 
   const loadMeta = useCallback(async () => {
     try {
@@ -137,6 +138,12 @@ export function StationPage() {
   useEffect(() => {
     void loadAccounts()
   }, [loadAccounts])
+
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) window.clearTimeout(searchTimer.current)
+    }
+  }, [])
 
   const loadMessages = useCallback(
     async (accountId: number, nextFolder: MessageFolder) => {
@@ -224,9 +231,9 @@ export function StationPage() {
   }, [keyword, scope])
 
   return (
-    <div className="flex h-screen min-w-0 flex-col">
+    <div className="page-layout">
       {/* Top toolbar */}
-      <header className="glass-bar z-20 flex h-[64px] shrink-0 items-center gap-3 border-b border-border px-5">
+      <header className="page-header">
         <div className="min-w-0">
           <h1 className="text-headline text-lg leading-tight">邮箱站</h1>
           <p className="text-paragraph text-xs">
@@ -235,19 +242,21 @@ export function StationPage() {
           </p>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative w-[240px]">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+          <div className="relative w-full sm:w-[220px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="h-9 pl-9"
               placeholder="搜索邮箱 / 备注 / 批次"
               value={keyword}
               onChange={(e) => {
-                setKeyword(e.target.value)
-                setPage(1)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void loadAccounts()
+                const value = e.target.value
+                setKeyword(value)
+                if (searchTimer.current) window.clearTimeout(searchTimer.current)
+                searchTimer.current = window.setTimeout(() => {
+                  setPage(1)
+                  setSearchKeyword(value.trim())
+                }, 300)
               }}
             />
           </div>
@@ -255,16 +264,21 @@ export function StationPage() {
             <Import className="h-4 w-4" />
             导入
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setComposeOpen(true)} disabled={!selected}>
+          <Button size="sm" onClick={() => setComposeOpen(true)} disabled={!selected}>
             <MailPlus className="h-4 w-4" />
             写信
           </Button>
         </div>
       </header>
 
+      <div className="flex shrink-0 gap-1 border-b bg-muted/40 p-2 xl:hidden" aria-label="邮件工作台分栏">
+        {([{ value: 'accounts', label: '邮箱列表' }, { value: 'messages', label: '邮件列表' }, { value: 'detail', label: '阅读与详情' }] as const).map((pane) => (
+          <Button key={pane.value} variant={mobilePane === pane.value ? 'secondary' : 'ghost'} size="sm" className="flex-1" aria-pressed={mobilePane === pane.value} onClick={() => setMobilePane(pane.value)}>{pane.label}</Button>
+        ))}
+      </div>
       <div className="flex min-h-0 flex-1">
         {/* Account list */}
-        <section className="flex w-[300px] shrink-0 flex-col border-r border-border bg-card/70">
+        <section className={cn('min-h-0 w-full shrink-0 flex-col border-r border-border bg-card xl:flex xl:w-[260px] 2xl:w-[290px]', mobilePane === 'accounts' ? 'flex' : 'hidden')}>
           <div className="space-y-2 border-b border-border/70 px-3 py-3">
             <div className="grid grid-cols-3 gap-1 rounded-xl bg-accent/60 p-1">
               {(
@@ -316,9 +330,6 @@ export function StationPage() {
                   setBatchCode(e.target.value)
                   setPage(1)
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void loadAccounts()
-                }}
               />
             </div>
           </div>
@@ -342,11 +353,11 @@ export function StationPage() {
                       key={account.id}
                       role="button"
                       tabIndex={0}
-                      onClick={() => void selectAccount(account)}
+                      onClick={() => { void selectAccount(account); setMobilePane('messages') }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault()
-                          void selectAccount(account)
+                          void selectAccount(account); setMobilePane('messages')
                         }
                       }}
                       className={cn(
@@ -432,7 +443,7 @@ export function StationPage() {
         </section>
 
         {/* Message list / account empty */}
-        <section className="flex w-[340px] shrink-0 flex-col border-r border-border bg-background">
+        <section className={cn('min-h-0 w-full shrink-0 flex-col border-r border-border bg-background xl:flex xl:w-[290px] 2xl:w-[330px]', mobilePane === 'messages' ? 'flex' : 'hidden')}>
           {!selected ? (
             <EmptyState
               icon={<Mail className="h-6 w-6" />}
@@ -504,7 +515,7 @@ export function StationPage() {
                         <button
                           key={message.id}
                           type="button"
-                          onClick={() => void openMessage(message)}
+                          onClick={() => { void openMessage(message); setMobilePane('detail') }}
                           className={cn(
                             'w-full rounded-xl border px-3 py-3 text-left transition-all',
                             active
@@ -539,13 +550,11 @@ export function StationPage() {
         </section>
 
         {/* Detail pane */}
-        <section className="flex min-w-0 flex-1 flex-col bg-background/70">
+        <section className={cn('min-h-0 min-w-0 flex-1 flex-col bg-muted/30 xl:flex', mobilePane === 'detail' ? 'flex' : 'hidden')}>
           {!selected ? (
             <div className="flex flex-1 items-center justify-center px-8">
               <div className="max-w-md text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-accent text-primary">
-                  <Inbox className="h-7 w-7" />
-                </div>
+                <MailIllustration className="mx-auto mb-6 w-60 max-w-full" />
                 <h2 className="text-headline text-xl">Outlook 邮件工作台</h2>
                 <p className="text-paragraph mt-3 text-sm leading-relaxed">
                   左侧选择邮箱后，在此查看邮件正文、执行获取邮件、分享链接、站点占用与写信。
@@ -561,8 +570,8 @@ export function StationPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setSelectedMessage(null)}
-                      className="lg:hidden"
+                      onClick={() => { setSelectedMessage(null); setMobilePane('messages') }}
+                      className="xl:hidden" aria-label="返回邮件列表"
                     >
                       <ArrowLeft className="h-4 w-4" />
                     </Button>
@@ -715,7 +724,6 @@ function AccountActions({
   onDelete: () => Promise<void>
 }) {
   const toast = useToast()
-  const [menuOpen, setMenuOpen] = useState(false)
 
   const togglePin = async () => {
     onBusy('pin')
@@ -758,51 +766,27 @@ function AccountActions({
   }
 
   return (
-    <div className="relative">
-      <Button
-        variant="outline"
-        size="icon-sm"
-        onClick={() => setMenuOpen((v) => !v)}
-        disabled={busy !== null}
-      >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
-      </Button>
-      {menuOpen ? (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
-          <div className="absolute right-0 top-10 z-40 w-48 animate-fade-in overflow-hidden rounded-xl border border-border bg-card shadow-float">
-            {[
-              {
-                label: account.is_pinned ? '取消置顶' : '置顶邮箱',
-                icon: account.is_pinned ? PinOff : Pin,
-                onClick: togglePin,
-              },
-              { label: account.enabled ? '停用邮箱' : '启用邮箱', icon: BadgeCheck, onClick: toggleEnabled },
-              { label: '占用到站点', icon: Building2, onClick: () => { setMenuOpen(false); onConsume() } },
-              { label: '释放站点占用', icon: ExternalLink, onClick: () => { setMenuOpen(false); onRelease() } },
-              { label: '转移用户池', icon: UserRound, onClick: () => { setMenuOpen(false); onMove() } },
-              { label: '删除邮箱', icon: Trash2, onClick: remove, danger: true },
-            ].map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                className={cn(
-                  'flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] hover:bg-accent',
-                  item.danger ? 'text-destructive' : 'text-foreground',
-                )}
-                onClick={() => {
-                  setMenuOpen(false)
-                  void item.onClick()
-                }}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : null}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="icon-sm" disabled={busy !== null} aria-label="邮箱操作">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        {[
+          { label: account.is_pinned ? '取消置顶' : '置顶邮箱', icon: account.is_pinned ? PinOff : Pin, onClick: togglePin },
+          { label: account.enabled ? '停用邮箱' : '启用邮箱', icon: BadgeCheck, onClick: toggleEnabled },
+          { label: '占用到站点', icon: Building2, onClick: onConsume },
+          { label: '释放站点占用', icon: ExternalLink, onClick: onRelease },
+          { label: '转移用户池', icon: UserRound, onClick: onMove },
+          { label: '删除邮箱', icon: Trash2, onClick: remove, danger: true },
+        ].map((item) => (
+          <DropdownMenuItem key={item.label} className={cn('gap-2 py-2.5', item.danger && 'text-destructive focus:text-destructive')} onSelect={() => { void item.onClick() }}>
+            <item.icon className="h-4 w-4" />{item.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -890,9 +874,9 @@ function MessageBody({ message }: { message: MessageDetail }) {
   return (
     <div className="p-6">
       <div className="surface overflow-hidden">
-        <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-3">
           <p className="text-headline text-[15px]">{message.subject || '(无主题)'}</p>
-          <div className="flex rounded-xl bg-accent/70 p-1">
+          <div className="flex shrink-0 rounded-lg bg-accent/70 p-1">
             <button
               type="button"
               onClick={() => setMode('html')}
@@ -994,8 +978,8 @@ function ImportDialog({
     >
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label>账号数据</Label>
-          <Textarea
+          <Label htmlFor="stationpage-field-1">账号数据</Label>
+          <Textarea id="stationpage-field-1"
             rows={10}
             placeholder={'demo@outlook.com----password\ndemo2@outlook.com----password----client_id----refresh_token'}
             value={data}
@@ -1004,12 +988,12 @@ function ImportDialog({
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label>批次代码（可选）</Label>
-            <Input value={batchCode} onChange={(e) => setBatchCode(e.target.value)} placeholder="batch-20260405" />
+            <Label htmlFor="stationpage-field-2">批次代码（可选）</Label>
+            <Input id="stationpage-field-2" value={batchCode} onChange={(e) => setBatchCode(e.target.value)} placeholder="batch-20260405" />
           </div>
           <div className="space-y-2">
-            <Label>归属用户（可选）</Label>
-            <Select value={ownerUserId} onChange={(e) => setOwnerUserId(e.target.value)}>
+            <Label htmlFor="stationpage-field-3">归属用户（可选）</Label>
+            <Select id="stationpage-field-3" value={ownerUserId} onChange={(e) => setOwnerUserId(e.target.value)}>
               <option value="">不指定</option>
               {users.map((user) => (
                 <option key={user.id} value={user.id}>
@@ -1099,20 +1083,20 @@ function ComposeDialog({
     >
       <div className="space-y-3">
         <div className="space-y-2">
-          <Label>收件人</Label>
-          <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="someone@example.com" />
+          <Label htmlFor="stationpage-field-4">收件人</Label>
+          <Input id="stationpage-field-4" value={to} onChange={(e) => setTo(e.target.value)} placeholder="someone@example.com" />
         </div>
         <div className="space-y-2">
-          <Label>抄送</Label>
-          <Input value={cc} onChange={(e) => setCc(e.target.value)} placeholder="可选" />
+          <Label htmlFor="stationpage-field-5">抄送</Label>
+          <Input id="stationpage-field-5" value={cc} onChange={(e) => setCc(e.target.value)} placeholder="可选" />
         </div>
         <div className="space-y-2">
-          <Label>主题</Label>
-          <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+          <Label htmlFor="stationpage-field-6">主题</Label>
+          <Input id="stationpage-field-6" value={subject} onChange={(e) => setSubject(e.target.value)} />
         </div>
         <div className="space-y-2">
-          <Label>正文</Label>
-          <Textarea rows={8} value={body} onChange={(e) => setBody(e.target.value)} />
+          <Label htmlFor="stationpage-field-7">正文</Label>
+          <Textarea id="stationpage-field-7" rows={8} value={body} onChange={(e) => setBody(e.target.value)} />
         </div>
       </div>
     </Dialog>
@@ -1184,8 +1168,8 @@ function ShareDialog({
     >
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label>有效天数</Label>
-          <Select value={days} onChange={(e) => setDays(e.target.value)}>
+          <Label htmlFor="stationpage-field-8">有效天数</Label>
+          <Select id="stationpage-field-8" value={days} onChange={(e) => setDays(e.target.value)}>
             {Array.from({ length: 12 }, (_, i) => (i + 1) * 30).map((d) => (
               <option key={d} value={d}>
                 {d} 天
@@ -1266,8 +1250,8 @@ function SiteActionDialog({
       }
     >
       <div className="space-y-2">
-        <Label>站点</Label>
-        <Select value={siteCode} onChange={(e) => setSiteCode(e.target.value)}>
+        <Label htmlFor="stationpage-field-9">站点</Label>
+        <Select id="stationpage-field-9" value={siteCode} onChange={(e) => setSiteCode(e.target.value)}>
           <option value="">请选择</option>
           {sites.map((site) => (
             <option key={site.id} value={site.code}>
@@ -1339,8 +1323,8 @@ function MovePoolDialog({
       }
     >
       <div className="space-y-2">
-        <Label>目标用户</Label>
-        <Select value={userId} onChange={(e) => setUserId(e.target.value)}>
+        <Label htmlFor="stationpage-field-10">目标用户</Label>
+        <Select id="stationpage-field-10" value={userId} onChange={(e) => setUserId(e.target.value)}>
           <option value="">请选择</option>
           {users.map((user) => (
             <option key={user.id} value={user.id}>

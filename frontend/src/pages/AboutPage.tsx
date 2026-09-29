@@ -6,7 +6,7 @@ const GITHUB_URL = 'https://github.com/why-qw1ko/outlook-mail'
 export function AboutPage() {
   return (
     <div className="scroll-area min-h-0 flex-1">
-      <header className="glass-bar border-b border-border px-5 py-4">
+      <header className="page-header block">
         <h1 className="text-headline text-lg leading-tight">关于</h1>
         <p className="text-paragraph text-xs">Outlook Mail Station 介绍与开源地址</p>
       </header>
@@ -47,7 +47,7 @@ export function AboutPage() {
             },
           ].map((item) => (
             <div key={item.title} className="surface p-5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-primary">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-secondary">
                 <item.icon className="h-4 w-4" />
               </div>
               <h3 className="text-headline mt-3 text-[15px]">{item.title}</h3>
@@ -65,7 +65,7 @@ export function AboutPage() {
             </li>
             <li className="flex gap-2">
               <Table2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              邮箱表格：搜索、分组筛选、批量复制/改分组/删除、txt 导出
+              邮箱表格：输入即时筛选、分组筛选、批量复制/改分组/删除、txt 导出
             </li>
             <li className="flex gap-2">
               <Mail className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -86,7 +86,7 @@ export function AboutPage() {
         </section>
 
         <p className="text-paragraph pb-4 text-center text-xs">
-          设计参考 Apple Human Interface Guidelines · 主题支持浅色/深色切换
+          集中管理邮箱，让每一次连接更简单。
         </p>
       </div>
     </div>

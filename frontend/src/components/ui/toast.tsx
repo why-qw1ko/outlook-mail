@@ -55,7 +55,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="pointer-events-none fixed bottom-5 right-5 z-[80] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
+      <div role="status" aria-live="polite" aria-atomic="false" className="pointer-events-none fixed bottom-5 right-5 z-[80] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
         {items.map((item) => (
           <div
             key={item.id}
@@ -63,7 +63,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               'pointer-events-auto flex items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-float animate-slide-up',
             )}
           >
-            {item.kind === 'success' && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />}
+            {item.kind === 'success' && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />}
             {item.kind === 'error' && <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />}
             {item.kind === 'info' && <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
             <p className="flex-1 text-sm leading-relaxed text-foreground">{item.message}</p>

@@ -94,6 +94,12 @@ export function regenerateUserApiKey(userId: number) {
   })
 }
 
+export function deleteUser(userId: number) {
+  return apiFetch<OperationStatusPayload>(`/api/users/${userId}`, {
+    method: 'DELETE',
+  })
+}
+
 export function fetchSites() {
   return apiFetch<SiteListResponse>('/api/sites')
 }
@@ -109,6 +115,12 @@ export function updateSite(siteId: number, payload: { code?: string; name?: stri
   return apiFetch<SiteItem>(`/api/sites/${siteId}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  })
+}
+
+export function deleteSite(siteId: number) {
+  return apiFetch<OperationStatusPayload>(`/api/sites/${siteId}`, {
+    method: 'DELETE',
   })
 }
 

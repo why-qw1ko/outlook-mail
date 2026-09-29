@@ -22,7 +22,7 @@ export function EmptyState({
         className,
       )}
     >
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-primary">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-secondary/15 bg-accent text-secondary">
         {icon ?? <Inbox className="h-6 w-6" />}
       </div>
       <div className="space-y-1.5">
@@ -39,7 +39,7 @@ export function EmptyState({
 export function LoadingState({ label = '加载中…', className }: { label?: string; className?: string }) {
   return (
     <div className={cn('flex h-full min-h-[180px] flex-col items-center justify-center gap-3 text-muted-foreground', className)}>
-      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+      <Loader2 className="h-5 w-5 animate-spin text-secondary" />
       <p className="text-[13px]">{label}</p>
     </div>
   )

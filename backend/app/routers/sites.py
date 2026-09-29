@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from ..auth import require_admin_authorization, require_admin_user
 from ..database import get_session
-from ..models import Site, utcnow
-from ..schemas import SiteCreateRequest, SiteItemResponse, SiteListResponse, SiteUpdateRequest
+from ..models import AccountSiteUsage, OutlookAccount, Site, utcnow
+from ..schemas import OperationStatusResponse, SiteCreateRequest, SiteItemResponse, SiteListResponse, SiteUpdateRequest
 from ..services.site_usage_service import normalize_site_code
 
 
@@ -105,3 +105,38 @@ def update_site(
     session.commit()
     session.refresh(site)
     return _serialize_site(site)
+
+
+@router.delete("/{site_id}", response_model=OperationStatusResponse)
+def delete_site(
+    site_id: int,
+    authorization: str | None = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    """AI by zb: 删除站点；有未释放占用时拒绝，历史占用与邮箱分组引用一并清理。"""
+    require_admin_user(authorization)
+    site = _get_site_or_404(session, site_id)
+
+    active_usage = session.exec(
+        select(AccountSiteUsage)
+        .where(AccountSiteUsage.site_id == site_id)
+        .where(AccountSiteUsage.released_at.is_(None))
+    ).first()
+    if active_usage:
+        raise HTTPException(
+            status_code=400,
+            detail="该站点仍有未释放的邮箱占用，请先释放后再删除",
+        )
+
+    session.exec(delete(AccountSiteUsage).where(AccountSiteUsage.site_id == site_id))
+    accounts = session.exec(
+        select(OutlookAccount).where(OutlookAccount.group_site_id == site_id)
+    ).all()
+    now = utcnow()
+    for account in accounts:
+        account.group_site_id = None
+        account.updated_at = now
+        session.add(account)
+    session.delete(site)
+    session.commit()
+    return OperationStatusResponse(ok=True, message=f"已删除站点 {site.code}")

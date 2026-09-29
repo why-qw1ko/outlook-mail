@@ -1,35 +1,31 @@
-import { forwardRef, type HTMLAttributes, type LabelHTMLAttributes, type SelectHTMLAttributes } from 'react'
+import { forwardRef, type HTMLAttributes, type SelectHTMLAttributes } from 'react'
 import { ChevronDown } from 'lucide-react'
+import { Badge as ShadcnBadge } from './badge'
 import { cn } from '@/lib/utils'
 
-export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
-  return (
-    <label
-      className={cn('text-[13px] font-medium text-foreground/90 leading-none', className)}
-      {...props}
-    />
-  )
-}
+export { Label } from './label'
+export { Separator } from './separator'
+export { Card, CardHeader, CardTitle, CardDescription } from './card'
 
 export function Badge({
   className,
   tone = 'default',
   ...props
-}: HTMLAttributes<HTMLSpanElement> & {
+}: HTMLAttributes<HTMLDivElement> & {
   tone?: 'default' | 'primary' | 'secondary' | 'destructive' | 'success' | 'outline'
 }) {
   const tones = {
-    default: 'bg-muted/15 text-muted-foreground',
-    primary: 'bg-primary/15 text-primary',
-    secondary: 'bg-secondary/25 text-secondary-foreground',
+    default: 'bg-muted text-muted-foreground',
+    primary: 'bg-primary/15 text-foreground',
+    secondary: 'bg-secondary/10 text-secondary',
     destructive: 'bg-destructive/15 text-destructive',
-    success: 'bg-emerald-500/15 text-emerald-700',
+    success: 'bg-success-surface text-success',
     outline: 'border border-border text-muted-foreground',
   }
   return (
-    <span
+    <ShadcnBadge variant="outline"
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
+        'inline-flex items-center gap-1 rounded-md border-transparent px-2 py-0.5 text-[11px] font-medium shadow-none',
         tones[tone],
         className,
       )}
@@ -44,7 +40,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
       <select
         ref={ref}
         className={cn(
-          'h-10 w-full appearance-none rounded-md border border-input bg-card pl-3 pr-9 text-sm text-foreground shadow-soft transition-colors focus-ring disabled:cursor-not-allowed disabled:opacity-50',
+          'h-10 w-full appearance-none rounded-md border border-input bg-card pl-3 pr-9 text-sm text-foreground shadow-sm transition-colors focus-ring disabled:cursor-not-allowed disabled:opacity-50 hover:border-primary/40',
           className,
         )}
         {...props}
@@ -56,30 +52,3 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   ),
 )
 Select.displayName = 'Select'
-
-export function Separator({ className, vertical = false }: { className?: string; vertical?: boolean }) {
-  return (
-    <div
-      className={cn(vertical ? 'w-px self-stretch bg-border' : 'h-px w-full bg-border', className)}
-    />
-  )
-}
-
-export function Card({
-  className,
-  ...props
-}: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('surface p-4', className)} {...props} />
-}
-
-export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('mb-3 flex items-start justify-between gap-3', className)} {...props} />
-}
-
-export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn('text-headline text-base', className)} {...props} />
-}
-
-export function CardDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn('text-paragraph text-[13px] leading-relaxed', className)} {...props} />
-}

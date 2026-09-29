@@ -26,10 +26,11 @@ import {
 import { copyText } from '@/lib/format'
 import type { AccountItem, AccountScope, SiteItem, UserIdentity, UserItem } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { Badge, Label, Select } from '@/components/ui/primitives'
-import { Dialog } from '@/components/ui/dialog'
+import { Dialog } from '@/components/common/AppDialog'
 import { useToast } from '@/components/ui/toast'
 import { EmptyState, LoadingState, SearchEmpty } from '@/components/common/states'
 
@@ -49,6 +50,7 @@ export function AccountsManagePage() {
   const [loading, setLoading] = useState(true)
   const [keyword, setKeyword] = useState('')
   const [searchKeyword, setSearchKeyword] = useState('')
+  const searchTimer = useRef<number | null>(null)
   const [scope, setScope] = useState<AccountScope>('all')
   const [groupFilter, setGroupFilter] = useState('')
   const [sites, setSites] = useState<SiteItem[]>([])
@@ -119,6 +121,12 @@ export function AccountsManagePage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) window.clearTimeout(searchTimer.current)
+    }
+  }, [])
 
   const selectedItems = useMemo(
     () => items.filter((item) => selectedIds.has(item.id)),
@@ -278,8 +286,8 @@ export function AccountsManagePage() {
   }
 
   return (
-    <div className="flex h-screen min-w-0 flex-col">
-      <header className="glass-bar z-20 border-b border-border px-5 py-4">
+    <div className="page-layout">
+      <header className="page-header block">
         <div className="flex flex-wrap items-center gap-3">
           <div>
             <h1 className="text-headline text-lg leading-tight">邮箱管理</h1>
@@ -292,7 +300,7 @@ export function AccountsManagePage() {
               <RefreshCw className="h-4 w-4" />
               刷新
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <Button size="sm" onClick={() => setImportOpen(true)}>
               <FileUp className="h-4 w-4" />
               导入
             </Button>
@@ -311,23 +319,16 @@ export function AccountsManagePage() {
               placeholder="搜索邮箱"
               value={keyword}
               onChange={(e) => {
-                setKeyword(e.target.value)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                const value = e.target.value
+                setKeyword(value)
+                if (searchTimer.current) window.clearTimeout(searchTimer.current)
+                searchTimer.current = window.setTimeout(() => {
                   setPage(1)
-                  setSearchKeyword(keyword.trim())
-                }
+                  setSearchKeyword(value.trim())
+                }, 300)
               }}
             />
           </div>
-          <Button variant="outline" size="sm" onClick={() => {
-            setPage(1)
-            setSearchKeyword(keyword.trim())
-          }}>
-            <Search className="h-4 w-4" />
-            搜索
-          </Button>
           <Select
             className="h-9 w-[140px]"
             value={scope}
@@ -390,7 +391,7 @@ export function AccountsManagePage() {
         </div>
       </header>
 
-      <div className="scroll-area min-h-0 flex-1 p-4">
+      <div className="page-content">
         {loading ? (
           <LoadingState label="加载邮箱…" />
         ) : items.length === 0 ? (
@@ -405,11 +406,11 @@ export function AccountsManagePage() {
           )
         ) : (
           <div className="surface overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-accent/40 text-left text-xs text-muted-foreground">
-                    <th className="w-12 px-3 py-3">
+            <div>
+              <Table className="w-full min-w-[920px] border-collapse text-sm">
+                <TableHeader>
+                  <TableRow className="border-b border-border bg-accent/40 text-left text-xs text-muted-foreground">
+                    <TableHead className="w-12 px-3 py-3">
                       <button type="button" onClick={toggleSelectPage} aria-label="全选本页">
                         {selectAllPage ? (
                           <CheckSquare className="h-4 w-4 text-primary" />
@@ -417,28 +418,28 @@ export function AccountsManagePage() {
                           <Square className="h-4 w-4" />
                         )}
                       </button>
-                    </th>
-                    <th className="w-14 px-3 py-3">序号</th>
-                    <th className="px-3 py-3">邮箱</th>
-                    <th className="px-3 py-3">密码</th>
-                    <th className="px-3 py-3">分组</th>
-                    <th className="px-3 py-3">令牌状态</th>
-                    <th className="px-3 py-3">权限类型</th>
-                    <th className="px-3 py-3">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableHead>
+                    <TableHead className="w-14 px-3 py-3">序号</TableHead>
+                    <TableHead className="px-3 py-3">邮箱</TableHead>
+                    <TableHead className="px-3 py-3">密码</TableHead>
+                    <TableHead className="px-3 py-3">分组</TableHead>
+                    <TableHead className="px-3 py-3">令牌状态</TableHead>
+                    <TableHead className="px-3 py-3">权限类型</TableHead>
+                    <TableHead className="px-3 py-3">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {items.map((item, index) => {
                     const checked = selectedIds.has(item.id)
                     return (
-                      <tr
+                      <TableRow
                         key={item.id}
                         className={cn(
                           'border-b border-border/60 last:border-0',
                           checked ? 'bg-primary/8' : 'hover:bg-accent/30',
                         )}
                       >
-                        <td className="px-3 py-2.5">
+                        <TableCell className="px-3 py-2.5">
                           <button
                             type="button"
                             onClick={() => toggleRow(item.id)}
@@ -450,11 +451,11 @@ export function AccountsManagePage() {
                               <Square className="h-4 w-4 text-muted-foreground" />
                             )}
                           </button>
-                        </td>
-                        <td className="px-3 py-2.5 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="px-3 py-2.5 text-muted-foreground">
                           {(page - 1) * PAGE_SIZE + index + 1}
-                        </td>
-                        <td className="px-3 py-2.5">
+                        </TableCell>
+                        <TableCell className="px-3 py-2.5">
                           <div className="flex items-center gap-1.5">
                             <span className="max-w-[220px] truncate font-medium text-foreground">
                               {item.email}
@@ -471,8 +472,8 @@ export function AccountsManagePage() {
                               <Copy className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                        </td>
-                        <td className="px-3 py-2.5">
+                        </TableCell>
+                        <TableCell className="px-3 py-2.5">
                           <div className="flex items-center gap-1.5">
                             <span className="max-w-[120px] truncate font-mono text-xs text-muted-foreground">
                               {item.password ? '••••••••' : '—'}
@@ -490,25 +491,25 @@ export function AccountsManagePage() {
                               <Copy className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                        </td>
-                        <td className="px-3 py-2.5">
+                        </TableCell>
+                        <TableCell className="px-3 py-2.5">
                           {item.group_site_id ? (
                             <Badge tone="secondary">{item.group_site_name || item.group_site_code}</Badge>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
-                        </td>
-                        <td className="px-3 py-2.5">
+                        </TableCell>
+                        <TableCell className="px-3 py-2.5">
                           <Badge tone={item.token_status === '已配置' ? 'success' : 'outline'}>
                             {item.token_status || '未配置'}
                           </Badge>
-                        </td>
-                        <td className="px-3 py-2.5">
+                        </TableCell>
+                        <TableCell className="px-3 py-2.5">
                           <Badge tone={item.permission_type.includes('OAuth') ? 'primary' : 'outline'}>
                             {item.permission_type || '未知'}
                           </Badge>
-                        </td>
-                        <td className="px-3 py-2.5">
+                        </TableCell>
+                        <TableCell className="px-3 py-2.5">
                           <div className="flex items-center gap-1">
                             <Button
                               variant="ghost"
@@ -538,12 +539,12 @@ export function AccountsManagePage() {
                               删除
                             </Button>
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )
                   })}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
 
             <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
@@ -613,8 +614,8 @@ export function AccountsManagePage() {
             <p className="text-paragraph text-xs">已载入文件：{pendingFileName}</p>
           ) : null}
           <div className="space-y-2">
-            <Label>账号数据（按行批量）</Label>
-            <Textarea
+            <Label htmlFor="accountsmanagepage-field-1">账号数据（按行批量）</Label>
+            <Textarea id="accountsmanagepage-field-1"
               rows={12}
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
@@ -622,8 +623,8 @@ export function AccountsManagePage() {
             />
           </div>
           <div className="space-y-2">
-            <Label>站点分组（可选）</Label>
-            <Select
+            <Label htmlFor="accountsmanagepage-field-2">站点分组（可选）</Label>
+            <Select id="accountsmanagepage-field-2"
               value={importGroup}
               onChange={(e) => setImportGroup(e.target.value)}
             >
@@ -635,8 +636,8 @@ export function AccountsManagePage() {
           </div>
           {currentUser?.role === 'admin' ? (
             <div className="space-y-2">
-              <Label>归属用户</Label>
-              <Select value={importOwnerId} onChange={(e) => setImportOwnerId(e.target.value)}>
+              <Label htmlFor="accountsmanagepage-field-3">归属用户</Label>
+              <Select id="accountsmanagepage-field-3" value={importOwnerId} onChange={(e) => setImportOwnerId(e.target.value)}>
                 <option value="">请选择用户</option>
                 {users.map((user) => (
                   <option key={user.id} value={user.id}>{user.username}</option>
@@ -664,8 +665,8 @@ export function AccountsManagePage() {
         }
       >
         <div className="space-y-2">
-          <Label>新站点分组</Label>
-          <Select
+          <Label htmlFor="accountsmanagepage-field-4">新站点分组</Label>
+          <Select id="accountsmanagepage-field-4"
             value={groupValue}
             onChange={(e) => setGroupValue(e.target.value)}
           >
@@ -675,7 +676,7 @@ export function AccountsManagePage() {
             ))}
           </Select>
           <p className="text-paragraph text-xs leading-relaxed">
-            分组引用站点，用于邮箱管理中的筛选与归类；站点占用和回退仍由业务操作单独记录。
+            分组只用于整理和筛选邮箱，不产生占用关系；业务领取/释放走「站点占用」，由开放接口或工作台操作。
           </p>
         </div>
       </Dialog>
