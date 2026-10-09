@@ -4,17 +4,17 @@ export interface UserIdentity {
   role: 'admin' | 'user' | string
 }
 
-export interface UserItem extends UserIdentity {
+export interface ApiKeyItem {
+  id: number
+  name: string
+  key: string
   enabled: boolean
-  pool_count: number
-  consumed_count: number
-  last_imported_at: string | null
   created_at: string
   updated_at: string
 }
 
-export interface UserListResponse {
-  items: UserItem[]
+export interface ApiKeyListResponse {
+  items: ApiKeyItem[]
 }
 
 export interface SiteItem {
@@ -28,13 +28,6 @@ export interface SiteItem {
 
 export interface SiteListResponse {
   items: SiteItem[]
-}
-
-export interface UserApiKeyPayload {
-  user_id: number
-  username: string
-  api_key: string
-  updated_at: string
 }
 
 export interface AccountSiteUsageItem {
@@ -57,8 +50,6 @@ export interface AccountItem {
   group_site_code: string
   group_site_name: string
   note: string
-  owner_user_id: number | null
-  owner_username: string
   is_consumed: boolean
   created_at: string
   updated_at: string
@@ -93,7 +84,6 @@ export interface AccountDetail extends AccountItem {
 }
 
 export interface PoolSummary {
-  user: UserIdentity
   pool_count: number
   consumed_count: number
 }
@@ -120,19 +110,6 @@ export interface ImportResult {
   updated: number
   failed: number
   errors: string[]
-}
-
-export interface ShareResult {
-  token: string
-  url: string
-  expires_at: string
-}
-
-export interface PublicSharePayload {
-  account: { email: string }
-  inbox: MessageItem[]
-  sent: MessageItem[]
-  expires_at: string
 }
 
 export interface AuthStatusResponse {

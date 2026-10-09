@@ -9,10 +9,9 @@ import { AppShell } from '@/components/layout/AppShell'
 import { LoginPage } from '@/pages/LoginPage'
 import { StationPage } from '@/pages/StationPage'
 import { AccountsManagePage } from '@/pages/AccountsManagePage'
-import { UsersPage } from '@/pages/UsersPage'
+import { ApiKeysPage } from '@/pages/ApiKeysPage'
 import { SitesPage } from '@/pages/SitesPage'
 import { AboutPage } from '@/pages/AboutPage'
-import { PublicSharePage } from '@/pages/PublicSharePage'
 
 function ProtectedRoutes() {
   const [authEnabled, setAuthEnabled] = useState<boolean | null>(null)
@@ -52,7 +51,7 @@ function ProtectedRoutes() {
       <Routes>
         <Route path="/" element={<StationPage />} />
         <Route path="/accounts" element={<AccountsManagePage />} />
-        <Route path="/users" element={<UsersPage />} />
+        <Route path="/api-keys" element={<ApiKeysPage />} />
         <Route path="/sites" element={<SitesPage />} />
         <Route path="/about" element={<AboutPage />} />
       </Routes>
@@ -67,7 +66,6 @@ export default function App() {
         <ToastProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/share/:token" element={<PublicSharePage />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
         </ToastProvider>

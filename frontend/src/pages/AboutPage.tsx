@@ -20,9 +20,8 @@ export function AboutPage() {
             <div>
               <h2 className="text-headline text-xl">Outlook Mail Station</h2>
               <p className="text-paragraph mt-2 text-sm leading-relaxed">
-                面向账号池管理与业务对接的 Outlook 邮件站。支持后台用户与站点维护、
-                邮箱导入导出、邮件收发与手动同步、公开只读分享，以及基于用户级 API Key
-                的业务开放接口。
+                面向个人使用的 Outlook 邮箱管理站。支持站点与邮箱池维护、
+                邮箱导入导出、邮件收发与手动同步，以及基于接入密钥的业务开放接口。
               </p>
             </div>
           </div>
@@ -43,7 +42,7 @@ export function AboutPage() {
             {
               icon: ShieldCheck,
               title: '开放接口',
-              desc: 'API Key 绑定用户池，按站点占用与回退',
+              desc: '接入密钥调用，按站点占用与回退',
             },
           ].map((item) => (
             <div key={item.title} className="surface p-5">
@@ -61,7 +60,7 @@ export function AboutPage() {
           <ul className="text-paragraph mt-3 space-y-2 text-sm leading-relaxed">
             <li className="flex gap-2">
               <Users className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              用户与邮箱池管理、API Key 查看与重置
+              接入密钥管理：创建、停用、轮换与删除
             </li>
             <li className="flex gap-2">
               <Table2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -69,7 +68,7 @@ export function AboutPage() {
             </li>
             <li className="flex gap-2">
               <Mail className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              手动获取邮件（无倒计时轮询）、写信、公开分享链接
+              手动获取邮件（无倒计时轮询）、写信、站点占用管理
             </li>
           </ul>
         </section>

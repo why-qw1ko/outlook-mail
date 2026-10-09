@@ -1,17 +1,17 @@
-"""Open API routes protected by user-bound API keys."""
+"""Open API routes protected by access keys."""
 
 from __future__ import annotations
 
 import random
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from ..auth import require_open_api_user
+from ..auth import require_open_api_key
 from ..database import get_session
-from ..models import AccountSiteUsage, MailMessage, OutlookAccount, SITE_SOURCE_OPEN_API, ShareToken, StationUser, utcnow
+from ..models import AccountSiteUsage, ApiKey, MailMessage, OutlookAccount, SITE_SOURCE_OPEN_API, utcnow
 from ..schemas import (
     MessageDetailResponse,
     OpenMailboxLatestResponse,
@@ -19,40 +19,32 @@ from ..schemas import (
     OperationStatusResponse,
     RandomMailboxRequest,
     RandomMailboxResponse,
-    ShareCreateRequest,
-    ShareCreateResponse,
 )
 from ..services.mail_sync_service import SYNC_FOLDERS_INBOUND, maybe_sync_account_mailbox
 from ..services.site_usage_service import get_active_account_site_usage, get_site_by_code, release_site_usage
 from ..settings import DEFAULT_SYNC_LIMIT
 from .messages import _serialize_message
-from .public_share import create_share_for_account
 
 
 router = APIRouter(prefix="/open", tags=["open-api"])
 
 
-def _find_user_account_by_email(session: Session, open_user: StationUser, email: str) -> OutlookAccount:
-    """AI by zb: 在当前 API Key 绑定用户池中按邮箱地址查找启用账号。"""
+def _find_account_by_email(session: Session, email: str) -> OutlookAccount:
+    """AI by zb: 按邮箱地址查找启用账号。"""
     normalized = str(email or "").strip()
     account = session.exec(
         select(OutlookAccount)
-        .where(OutlookAccount.owner_user_id == open_user.id)
         .where(OutlookAccount.enabled == True)
         .where(OutlookAccount.email == normalized)
     ).first()
     if account:
         return account
     lowered = normalized.lower()
-    items = session.exec(
-        select(OutlookAccount)
-        .where(OutlookAccount.owner_user_id == open_user.id)
-        .where(OutlookAccount.enabled == True)
-    ).all()
+    items = session.exec(select(OutlookAccount).where(OutlookAccount.enabled == True)).all()
     for item in items:
         if item.email.lower() == lowered:
             return item
-    raise HTTPException(status_code=404, detail="邮箱不存在或不属于当前用户池")
+    raise HTTPException(status_code=404, detail="邮箱不存在")
 
 
 def _parse_since(value: str | None) -> datetime | None:
@@ -82,19 +74,15 @@ def _normalize_dt(value: datetime | None) -> datetime | None:
 def random_email(
     request: RandomMailboxRequest,
     session: Session = Depends(get_session),
-    open_user: StationUser = Depends(require_open_api_user),
+    _api_key: ApiKey = Depends(require_open_api_key),
 ):
-    """AI by zb: 从当前用户池中随机分配一个当前站点尚未使用的邮箱。"""
+    """AI by zb: 从全局邮箱池中随机分配一个当前站点尚未使用的邮箱。"""
     domain = str(request.domain or "").strip().lower().lstrip("@")
     batch_code = str(request.batch_code or "").strip()
     site = get_site_by_code(session, request.site_code, enabled_only=True)
 
     for _ in range(3):
-        accounts = session.exec(
-            select(OutlookAccount)
-            .where(OutlookAccount.enabled == True)
-            .where(OutlookAccount.owner_user_id == open_user.id)
-        ).all()
+        accounts = session.exec(select(OutlookAccount).where(OutlookAccount.enabled == True)).all()
         candidates = [
             account for account in accounts
             if (not domain or account.email.lower().endswith("@" + domain))
@@ -102,7 +90,7 @@ def random_email(
             and not get_active_account_site_usage(session, account.id or 0, site.id or 0)
         ]
         if not candidates:
-            raise HTTPException(status_code=404, detail="目标用户池中没有可分配给当前站点的邮箱")
+            raise HTTPException(status_code=404, detail="没有可分配给当前站点的邮箱")
 
         picked = random.SystemRandom().choice(candidates)
         now = utcnow()
@@ -110,7 +98,7 @@ def random_email(
             AccountSiteUsage(
                 account_id=picked.id or 0,
                 site_id=site.id or 0,
-                user_id=open_user.id or 0,
+                user_id=0,
                 source=SITE_SOURCE_OPEN_API,
                 created_at=now,
                 updated_at=now,
@@ -143,10 +131,10 @@ def latest_message(
     email: str,
     refresh: bool = Query(default=True),
     session: Session = Depends(get_session),
-    open_user: StationUser = Depends(require_open_api_user),
+    _api_key: ApiKey = Depends(require_open_api_key),
 ):
     """AI by zb: 获取指定邮箱最新一封收件邮件，并按需触发同步。"""
-    account = _find_user_account_by_email(session, open_user, email)
+    account = _find_account_by_email(session, email)
     try:
         maybe_sync_account_mailbox(
             session,
@@ -194,10 +182,10 @@ def mailbox_messages(
     since: str = Query(default=""),
     folder: str = Query(default="inbox"),
     session: Session = Depends(get_session),
-    open_user: StationUser = Depends(require_open_api_user),
+    _api_key: ApiKey = Depends(require_open_api_key),
 ):
     """AI by zb: 获取指定邮箱的邮件列表，并支持按时间过滤。"""
-    account = _find_user_account_by_email(session, open_user, email)
+    account = _find_account_by_email(session, email)
     try:
         maybe_sync_account_mailbox(
             session,
@@ -237,51 +225,18 @@ def mailbox_messages(
     )
 
 
-@router.post("/mailboxes/{email}/share", response_model=ShareCreateResponse)
-def create_mailbox_share(
-    email: str,
-    request: Request,
-    payload: ShareCreateRequest,
-    session: Session = Depends(get_session),
-    open_user: StationUser = Depends(require_open_api_user),
-):
-    """AI by zb: 通过用户级开放接口为指定邮箱生成临时授权链接。"""
-    account = _find_user_account_by_email(session, open_user, email)
-    return create_share_for_account(
-        session,
-        account=account,
-        base_url=str(request.base_url),
-        days=payload.days,
-    )
-
-
-@router.post("/mailboxes/{email}/share/revoke", response_model=OperationStatusResponse)
-def revoke_mailbox_share(
-    email: str,
-    session: Session = Depends(get_session),
-    open_user: StationUser = Depends(require_open_api_user),
-):
-    """AI by zb: 手动废止指定邮箱当前有效的临时授权。"""
-    account = _find_user_account_by_email(session, open_user, email)
-    shares = session.exec(select(ShareToken).where(ShareToken.account_id == (account.id or 0))).all()
-    for share in shares:
-        session.delete(share)
-    session.commit()
-    return OperationStatusResponse(ok=True, email=account.email, message="当前邮箱的临时授权已废止")
-
-
 @router.post("/mailboxes/{email}/sites/{site_code}/release", response_model=OperationStatusResponse)
 def release_mailbox_site_usage(
     email: str,
     site_code: str,
     session: Session = Depends(get_session),
-    open_user: StationUser = Depends(require_open_api_user),
+    _api_key: ApiKey = Depends(require_open_api_key),
 ):
     """AI by zb: 释放指定邮箱在某个站点上的使用记录。"""
-    account = _find_user_account_by_email(session, open_user, email)
+    account = _find_account_by_email(session, email)
     site = get_site_by_code(session, site_code, enabled_only=False)
     usage = get_active_account_site_usage(session, account.id or 0, site.id or 0)
-    if not usage or usage.user_id != (open_user.id or 0):
+    if not usage:
         raise HTTPException(status_code=404, detail="当前邮箱不存在对应站点的有效使用记录")
     release_site_usage(session, usage)
     account.updated_at = utcnow()

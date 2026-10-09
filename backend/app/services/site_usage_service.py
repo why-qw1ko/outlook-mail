@@ -74,20 +74,17 @@ def load_site_map(session: Session) -> dict[int, Site]:
 
 def count_pool_and_consumed_accounts(
     session: Session,
-    owner_user_id: int | None = None,
     *,
     site_id: int | None = None,
 ) -> tuple[int, int]:
-    """AI by zb: 统计指定用户或全部用户在某个站点下的池内与已使用邮箱数量。"""
+    """AI by zb: 统计全局或指定站点下的池内与已使用邮箱数量。"""
     stmt = select(OutlookAccount).where(OutlookAccount.enabled == True)
-    if owner_user_id is not None:
-        stmt = stmt.where(OutlookAccount.owner_user_id == owner_user_id)
     accounts = list(session.exec(stmt).all())
     if not accounts:
         return 0, 0
     usage_stmt = select(AccountSiteUsage).where(AccountSiteUsage.released_at.is_(None))
     if site_id is not None:
-      usage_stmt = usage_stmt.where(AccountSiteUsage.site_id == site_id)
+        usage_stmt = usage_stmt.where(AccountSiteUsage.site_id == site_id)
     active_usage_account_ids = {usage.account_id for usage in session.exec(usage_stmt).all()}
     consumed_count = sum(1 for account in accounts if (account.id or 0) in active_usage_account_ids)
     pool_count = max(len(accounts) - consumed_count, 0)

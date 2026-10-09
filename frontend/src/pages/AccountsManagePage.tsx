@@ -18,13 +18,11 @@ import {
   deleteAccount,
   exportAccountsTxt,
   fetchAccounts,
-  fetchAuthStatus,
   fetchSites,
-  fetchUsers,
   importAccounts,
 } from '@/lib/api'
 import { copyText } from '@/lib/format'
-import type { AccountItem, AccountScope, SiteItem, UserIdentity, UserItem } from '@/lib/types'
+import type { AccountItem, AccountScope, SiteItem } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
@@ -54,15 +52,12 @@ export function AccountsManagePage() {
   const [scope, setScope] = useState<AccountScope>('all')
   const [groupFilter, setGroupFilter] = useState('')
   const [sites, setSites] = useState<SiteItem[]>([])
-  const [users, setUsers] = useState<UserItem[]>([])
-  const [currentUser, setCurrentUser] = useState<UserIdentity | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [selectAllPage, setSelectAllPage] = useState(false)
 
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState('')
   const [importGroup, setImportGroup] = useState('')
-  const [importOwnerId, setImportOwnerId] = useState('')
   const [importLoading, setImportLoading] = useState(false)
   const [pendingFileName, setPendingFileName] = useState('')
 
@@ -75,15 +70,13 @@ export function AccountsManagePage() {
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([fetchSites(), fetchUsers(), fetchAuthStatus()])
-      .then(([siteResult, userResult, authResult]) => {
+    fetchSites()
+      .then((siteResult) => {
         if (cancelled) return
         setSites(siteResult.items)
-        setUsers(userResult.items.filter((user) => user.role !== 'admin' && user.enabled))
-        setCurrentUser(authResult.user)
       })
       .catch((error) => {
-        if (!cancelled) toast.error(error instanceof Error ? error.message : '加载站点和用户失败')
+        if (!cancelled) toast.error(error instanceof Error ? error.message : '加载站点失败')
       })
     return () => { cancelled = true }
   }, [toast])
@@ -212,21 +205,12 @@ export function AccountsManagePage() {
       toast.error('没有可导入的内容')
       return
     }
-    if (!currentUser) {
-      toast.error('无法确认当前登录用户，请刷新后重试')
-      return
-    }
-    if (currentUser.role === 'admin' && !importOwnerId) {
-      toast.error('请先选择邮箱归属用户')
-      return
-    }
     setImportLoading(true)
     try {
       const result = await importAccounts({
         data: trimmed,
         enabled: true,
         group_site_id: importGroup ? Number(importGroup) : null,
-        owner_user_id: currentUser.role === 'admin' ? Number(importOwnerId) : undefined,
       })
       toast.success(
         `导入完成：新增 ${result.created}，更新 ${result.updated}，失败 ${result.failed}`,
@@ -272,7 +256,7 @@ export function AccountsManagePage() {
 
   const applyBatchDelete = async () => {
     if (selectedIds.size === 0) return
-    if (!window.confirm(`确认删除勾选的 ${selectedIds.size} 个邮箱？`)) return
+    if (!window.confirm(`确认硬删除勾选的 ${selectedIds.size} 个邮箱？邮件缓存会一并清理，且不可恢复。`)) return
     setBusy(true)
     try {
       const result = await batchDeleteAccounts(Array.from(selectedIds))
@@ -526,7 +510,7 @@ export function AccountsManagePage() {
                               size="sm"
                               className="text-destructive"
                               onClick={async () => {
-                                if (!window.confirm(`确认删除 ${item.email}？`)) return
+                                if (!window.confirm(`确认硬删除 ${item.email}？邮件缓存会一并清理，且不可恢复。`)) return
                                 try {
                                   await deleteAccount(item.id)
                                   toast.success('已删除')
@@ -634,17 +618,6 @@ export function AccountsManagePage() {
               ))}
             </Select>
           </div>
-          {currentUser?.role === 'admin' ? (
-            <div className="space-y-2">
-              <Label htmlFor="accountsmanagepage-field-3">归属用户</Label>
-              <Select id="accountsmanagepage-field-3" value={importOwnerId} onChange={(e) => setImportOwnerId(e.target.value)}>
-                <option value="">请选择用户</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>{user.username}</option>
-                ))}
-              </Select>
-            </div>
-          ) : null}
         </div>
       </Dialog>
 

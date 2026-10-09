@@ -15,13 +15,10 @@ import {
   RefreshCw,
   Search,
   Send,
-  Share2,
   Trash2,
-  UserRound,
 } from 'lucide-react'
 import {
   consumeAccount,
-  createShare,
   deleteAccount,
   fetchAccountDetail,
   fetchAccounts,
@@ -29,9 +26,7 @@ import {
   fetchMessages,
   fetchPoolSummary,
   fetchSites,
-  fetchUsers,
   importAccounts,
-  moveAccountsToUserPool,
   releaseAccount,
   sendMail,
   syncAccount,
@@ -46,7 +41,6 @@ import type {
   MessageFolder,
   MessageItem,
   SiteItem,
-  UserItem,
 } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { MailIllustration } from '@/components/common/MailIllustration'
@@ -77,7 +71,6 @@ export function StationPage() {
   const [batchCode, setBatchCode] = useState('')
   const [siteCode, setSiteCode] = useState('')
   const [sites, setSites] = useState<SiteItem[]>([])
-  const [users, setUsers] = useState<UserItem[]>([])
   const [pool, setPool] = useState<{ pool_count: number; consumed_count: number } | null>(null)
 
   const [selected, setSelected] = useState<AccountDetail | null>(null)
@@ -91,8 +84,6 @@ export function StationPage() {
 
   const [importOpen, setImportOpen] = useState(false)
   const [composeOpen, setComposeOpen] = useState(false)
-  const [shareOpen, setShareOpen] = useState(false)
-  const [moveOpen, setMoveOpen] = useState(false)
   const [siteActionOpen, setSiteActionOpen] = useState<'consume' | 'release' | null>(null)
 
   const loadAccounts = useCallback(async () => {
@@ -118,14 +109,12 @@ export function StationPage() {
 
   const loadMeta = useCallback(async () => {
     try {
-      const [siteResult, poolResult, userResult] = await Promise.all([
+      const [siteResult, poolResult] = await Promise.all([
         fetchSites(),
         fetchPoolSummary(),
-        fetchUsers().catch(() => ({ items: [] as UserItem[] })),
       ])
       setSites(siteResult.items.filter((item) => item.enabled))
       setPool({ pool_count: poolResult.pool_count, consumed_count: poolResult.consumed_count })
-      setUsers(userResult.items)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '加载基础数据失败')
     }
@@ -557,7 +546,7 @@ export function StationPage() {
                 <MailIllustration className="mx-auto mb-6 w-60 max-w-full" />
                 <h2 className="text-headline text-xl">Outlook 邮件工作台</h2>
                 <p className="text-paragraph mt-3 text-sm leading-relaxed">
-                  左侧选择邮箱后，在此查看邮件正文、执行获取邮件、分享链接、站点占用与写信。
+                  左侧选择邮箱后，在此查看邮件正文、执行获取邮件、站点占用与写信。
                   邮件获取为手动操作，不会倒计时自动刷新。
                 </p>
               </div>
@@ -587,22 +576,13 @@ export function StationPage() {
                               ? selectedMessage.recipient_summary
                               : formatSender(selectedMessage.sender_name, selectedMessage.sender_email)
                           } · ${formatTime(selectedMessage.sent_at)}`
-                        : `归属 ${selected.owner_username || '未分配'} · ${
+                        : `${
                             selected.is_consumed ? '使用中' : '可分配'
                           }`}
                     </p>
                   </div>
                 </div>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShareOpen(true)}
-                  title="生成公开分享链接"
-                >
-                  <Share2 className="h-4 w-4" />
-                  分享
-                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -623,7 +603,6 @@ export function StationPage() {
                   }}
                   onConsume={() => setSiteActionOpen('consume')}
                   onRelease={() => setSiteActionOpen('release')}
-                  onMove={() => setMoveOpen(true)}
                   onDelete={async () => {
                     setSelected(null)
                     setMessages([])
@@ -649,7 +628,6 @@ export function StationPage() {
 
       <ImportDialog
         open={importOpen}
-        users={users}
         onClose={() => setImportOpen(false)}
         onDone={async () => {
           setImportOpen(false)
@@ -672,13 +650,6 @@ export function StationPage() {
         }}
       />
 
-      <ShareDialog
-        open={shareOpen}
-        accountId={selected?.id}
-        email={selected?.email}
-        onClose={() => setShareOpen(false)}
-      />
-
       <SiteActionDialog
         mode={siteActionOpen}
         account={selected}
@@ -686,17 +657,6 @@ export function StationPage() {
         onClose={() => setSiteActionOpen(null)}
         onDone={async () => {
           setSiteActionOpen(null)
-          await Promise.all([refreshSelectedAccount(), loadAccounts(), loadMeta()])
-        }}
-      />
-
-      <MovePoolDialog
-        open={moveOpen}
-        account={selected}
-        users={users}
-        onClose={() => setMoveOpen(false)}
-        onDone={async () => {
-          setMoveOpen(false)
           await Promise.all([refreshSelectedAccount(), loadAccounts(), loadMeta()])
         }}
       />
@@ -711,7 +671,6 @@ function AccountActions({
   onRefresh,
   onConsume,
   onRelease,
-  onMove,
   onDelete,
 }: {
   account: AccountDetail
@@ -720,7 +679,6 @@ function AccountActions({
   onRefresh: () => Promise<void>
   onConsume: () => void
   onRelease: () => void
-  onMove: () => void
   onDelete: () => Promise<void>
 }) {
   const toast = useToast()
@@ -752,7 +710,7 @@ function AccountActions({
   }
 
   const remove = async () => {
-    if (!window.confirm(`确认删除邮箱 ${account.email}？相关缓存会一并清理。`)) return
+    if (!window.confirm(`确认硬删除邮箱 ${account.email}？邮件缓存与站点占用会一并清理，且不可恢复。`)) return
     onBusy('delete')
     try {
       await deleteAccount(account.id)
@@ -778,7 +736,6 @@ function AccountActions({
           { label: account.enabled ? '停用邮箱' : '启用邮箱', icon: BadgeCheck, onClick: toggleEnabled },
           { label: '占用到站点', icon: Building2, onClick: onConsume },
           { label: '释放站点占用', icon: ExternalLink, onClick: onRelease },
-          { label: '转移用户池', icon: UserRound, onClick: onMove },
           { label: '删除邮箱', icon: Trash2, onClick: remove, danger: true },
         ].map((item) => (
           <DropdownMenuItem key={item.label} className={cn('gap-2 py-2.5', item.danger && 'text-destructive focus:text-destructive')} onSelect={() => { void item.onClick() }}>
@@ -801,7 +758,7 @@ function AccountOverview({ account }: { account: AccountDetail }) {
           <div className="min-w-0 flex-1">
             <h3 className="text-headline text-base">{account.email}</h3>
             <p className="text-paragraph text-[13px] leading-relaxed">
-              批次 {account.batch_code || '—'} · 归属 {account.owner_username || '未分配'}
+              批次 {account.batch_code || '—'}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Badge tone={account.enabled ? 'success' : 'outline'}>{account.enabled ? '启用' : '停用'}</Badge>
@@ -915,19 +872,16 @@ function MessageBody({ message }: { message: MessageDetail }) {
 
 function ImportDialog({
   open,
-  users,
   onClose,
   onDone,
 }: {
   open: boolean
-  users: UserItem[]
   onClose: () => void
   onDone: () => Promise<void>
 }) {
   const toast = useToast()
   const [data, setData] = useState('')
   const [batchCode, setBatchCode] = useState('')
-  const [ownerUserId, setOwnerUserId] = useState('')
   const [enabled, setEnabled] = useState(true)
   const [loading, setLoading] = useState(false)
 
@@ -942,7 +896,6 @@ function ImportDialog({
         data,
         enabled,
         batch_code: batchCode.trim(),
-        owner_user_id: ownerUserId ? Number(ownerUserId) : null,
       })
       toast.success(
         `导入完成：新增 ${result.created}，更新 ${result.updated}，失败 ${result.failed}`,
@@ -986,22 +939,9 @@ function ImportDialog({
             onChange={(e) => setData(e.target.value)}
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="stationpage-field-2">批次代码（可选）</Label>
-            <Input id="stationpage-field-2" value={batchCode} onChange={(e) => setBatchCode(e.target.value)} placeholder="batch-20260405" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="stationpage-field-3">归属用户（可选）</Label>
-            <Select id="stationpage-field-3" value={ownerUserId} onChange={(e) => setOwnerUserId(e.target.value)}>
-              <option value="">不指定</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.username}
-                </option>
-              ))}
-            </Select>
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="stationpage-field-2">批次代码（可选）</Label>
+          <Input id="stationpage-field-2" value={batchCode} onChange={(e) => setBatchCode(e.target.value)} placeholder="batch-20260405" />
         </div>
         <label className="flex items-center gap-2 text-sm text-foreground">
           <input
@@ -1103,92 +1043,6 @@ function ComposeDialog({
   )
 }
 
-function ShareDialog({
-  open,
-  accountId,
-  email,
-  onClose,
-}: {
-  open: boolean
-  accountId?: number
-  email?: string
-  onClose: () => void
-}) {
-  const toast = useToast()
-  const [days, setDays] = useState('30')
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ url: string; expires_at: string } | null>(null)
-
-  useEffect(() => {
-    if (!open) setResult(null)
-  }, [open])
-
-  const submit = async () => {
-    if (!accountId) return
-    setLoading(true)
-    try {
-      const share = await createShare(accountId, Number(days) || 30)
-      setResult({ url: share.url, expires_at: share.expires_at })
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '生成分享失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title="公开分享链接"
-      description={email ? `为 ${email} 创建只读访问链接` : undefined}
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>
-            关闭
-          </Button>
-          {!result ? (
-            <Button onClick={() => void submit()} loading={loading}>
-              <Share2 className="h-4 w-4" />
-              生成链接
-            </Button>
-          ) : (
-            <Button
-              onClick={async () => {
-                await copyText(result.url)
-                toast.success('链接已复制')
-              }}
-            >
-              <Copy className="h-4 w-4" />
-              复制链接
-            </Button>
-          )}
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="stationpage-field-8">有效天数</Label>
-          <Select id="stationpage-field-8" value={days} onChange={(e) => setDays(e.target.value)}>
-            {Array.from({ length: 12 }, (_, i) => (i + 1) * 30).map((d) => (
-              <option key={d} value={d}>
-                {d} 天
-              </option>
-            ))}
-          </Select>
-        </div>
-        {result ? (
-          <div className="rounded-xl border border-primary/25 bg-primary/8 p-4">
-            <p className="text-paragraph text-xs">分享链接</p>
-            <p className="mt-2 break-all text-sm text-foreground">{result.url}</p>
-            <p className="text-paragraph mt-2 text-xs">过期时间：{formatTime(result.expires_at)}</p>
-          </div>
-        ) : null}
-      </div>
-    </Dialog>
-  )
-}
-
 function SiteActionDialog({
   mode,
   account,
@@ -1256,79 +1110,6 @@ function SiteActionDialog({
           {sites.map((site) => (
             <option key={site.id} value={site.code}>
               {site.code} · {site.name}
-            </option>
-          ))}
-        </Select>
-      </div>
-    </Dialog>
-  )
-}
-
-function MovePoolDialog({
-  open,
-  account,
-  users,
-  onClose,
-  onDone,
-}: {
-  open: boolean
-  account: AccountDetail | null
-  users: UserItem[]
-  onClose: () => void
-  onDone: () => Promise<void>
-}) {
-  const toast = useToast()
-  const [userId, setUserId] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    if (open && account) setUserId(String(account.owner_user_id ?? ''))
-  }, [open, account])
-
-  const submit = async () => {
-    if (!account || !userId) {
-      toast.error('请选择目标用户')
-      return
-    }
-    setLoading(true)
-    try {
-      await moveAccountsToUserPool({
-        account_ids: [account.id],
-        owner_user_id: Number(userId),
-      })
-      toast.success('已转移用户池')
-      await onDone()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '转移失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title="转移用户池"
-      description={account?.email}
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>
-            取消
-          </Button>
-          <Button onClick={() => void submit()} loading={loading}>
-            确认转移
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-2">
-        <Label htmlFor="stationpage-field-10">目标用户</Label>
-        <Select id="stationpage-field-10" value={userId} onChange={(e) => setUserId(e.target.value)}>
-          <option value="">请选择</option>
-          {users.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.username}
             </option>
           ))}
         </Select>

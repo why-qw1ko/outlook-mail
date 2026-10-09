@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from ..database import get_session
 from ..auth import require_admin_authorization
-from ..models import MailMessage, OutlookAccount, USER_ROLE_ADMIN, utcnow
+from ..models import MailMessage, OutlookAccount, utcnow
 from ..schemas import MessageDetailResponse, MessageItemResponse, SendMailRequest, SyncResponse
 from ..services.mail_sync_service import sync_account_mailbox
 from ..services.outlook_service import OutlookService
@@ -18,15 +18,13 @@ router = APIRouter(tags=["messages"])
 
 
 def _get_account_or_404(session: Session, account_id: int, authorization: str | None) -> OutlookAccount:
-    """Return an enabled account visible to the current backend user."""
-    current_user = require_admin_authorization(authorization)
+    """Return an enabled account for the current backend session."""
+    require_admin_authorization(authorization)
     account = session.get(OutlookAccount, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="邮箱不存在")
     if not account.enabled:
         raise HTTPException(status_code=400, detail="该邮箱已停用")
-    if current_user.role != USER_ROLE_ADMIN and account.owner_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="无权访问该邮箱")
     return account
 
 

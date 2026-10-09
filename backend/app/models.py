@@ -20,13 +20,13 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def generate_station_api_key() -> str:
-    """AI by zb: 生成用户级开放接口使用的随机 API Key。"""
+def generate_api_key() -> str:
+    """AI by zb: 生成开放接口接入密钥。"""
     return f"oms_{secrets.token_urlsafe(24)}"
 
 
 class StationUser(SQLModel, table=True):
-    """AI by zb: 存储后台登录用户及其角色信息。"""
+    """AI by zb: 存储后台单管理员登录账号。"""
 
     __tablename__ = "station_users"
 
@@ -34,8 +34,19 @@ class StationUser(SQLModel, table=True):
     username: str = Field(index=True, sa_column_kwargs={"unique": True})
     password: str = ""
     role: str = Field(default=USER_ROLE_USER, index=True)
-    api_key: Optional[str] = None
-    last_imported_at: Optional[datetime] = None
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class ApiKey(SQLModel, table=True):
+    """AI by zb: 存储开放接口使用的接入密钥。"""
+
+    __tablename__ = "api_keys"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(default="", index=True)
+    key: str = Field(index=True, sa_column_kwargs={"unique": True})
     enabled: bool = True
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -55,7 +66,7 @@ class Site(SQLModel, table=True):
 
 
 class OutlookAccount(SQLModel, table=True):
-    """AI by zb: 存储归属于某个用户池的 Outlook 账号信息。"""
+    """AI by zb: 存储全局邮箱池中的 Outlook 账号信息。"""
 
     __tablename__ = "outlook_accounts"
 
@@ -116,15 +127,3 @@ class MailMessage(SQLModel, table=True):
     sent_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
-
-
-class ShareToken(SQLModel, table=True):
-    """AI by zb: 存储临时公开访问链接。"""
-
-    __tablename__ = "share_tokens"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    token: str = Field(index=True, sa_column_kwargs={"unique": True})
-    account_id: int = Field(index=True)
-    expires_at: datetime = Field(index=True)
-    created_at: datetime = Field(default_factory=utcnow)

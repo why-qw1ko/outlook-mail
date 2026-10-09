@@ -16,16 +16,15 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from ..auth import require_admin_authorization, require_admin_user
+from ..auth import require_admin_authorization
 from ..database import get_session
-from ..models import AccountSiteUsage, OutlookAccount, SITE_SOURCE_MANUAL, ShareToken, Site, StationUser, USER_ROLE_ADMIN, utcnow
+from ..models import AccountSiteUsage, MailMessage, OutlookAccount, SITE_SOURCE_MANUAL, Site, utcnow
 from ..schemas import (
     AccountDetailResponse,
     AccountListItem,
     AccountListResponse,
     AccountSiteUsageSummary,
     BatchDeleteAccountsRequest,
-    BatchMoveAccountsRequest,
     BatchUpdateAccountsRequest,
     ImportAccountsRequest,
     ImportAccountsResponse,
@@ -102,14 +101,6 @@ def _parse_import_records(data: str) -> list[tuple[int, tuple[str, str, str, str
     return result
 
 
-def _get_user_or_404(session: Session, user_id: int) -> StationUser:
-    """AI by zb: 获取后台用户，不存在时抛出 404。"""
-    user = session.get(StationUser, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    return user
-
-
 def _get_account_or_404(session: Session, account_id: int) -> OutlookAccount:
     """AI by zb: 获取账号，不存在时抛出 404。"""
     account = session.get(OutlookAccount, account_id)
@@ -135,19 +126,6 @@ def _get_message_counts(session: Session, account_id: int) -> tuple[int, int]:
         .where(MailMessage.folder == "sent")
     ).one()
     return int(inbox or 0), int(sent or 0)
-
-
-def _resolve_owner_name(owner_map: dict[int, str], owner_user_id: int | None) -> str:
-    """AI by zb: 将归属用户 ID 映射成用户名。"""
-    if owner_user_id is None:
-        return ""
-    return owner_map.get(owner_user_id, "")
-
-
-def _load_owner_map(session: Session) -> dict[int, str]:
-    """AI by zb: 加载用户 ID 到用户名的映射。"""
-    users = session.exec(select(StationUser)).all()
-    return {user.id or 0: user.username for user in users if user.id is not None}
 
 
 def _serialize_active_sites(
@@ -202,7 +180,6 @@ def _derive_auth_fields(account: OutlookAccount) -> dict[str, bool | str]:
 def _serialize_account(
     session: Session,
     account: OutlookAccount,
-    owner_map: dict[int, str],
     site_map: dict[int, Site],
 ) -> AccountListItem:
     """AI by zb: 统一序列化邮箱列表项。"""
@@ -221,8 +198,6 @@ def _serialize_account(
         group_site_code=group_site.code if group_site else "",
         group_site_name=(group_site.name or group_site.code) if group_site else "",
         note=account.note,
-        owner_user_id=account.owner_user_id,
-        owner_username=_resolve_owner_name(owner_map, account.owner_user_id),
         is_consumed=bool(active_usages),
         created_at=account.created_at,
         updated_at=account.updated_at,
@@ -238,40 +213,22 @@ def _serialize_account(
 def _serialize_detail(
     session: Session,
     account: OutlookAccount,
-    owner_map: dict[int, str],
     site_map: dict[int, Site],
 ) -> AccountDetailResponse:
     """AI by zb: 统一序列化邮箱详情。"""
-    item = _serialize_account(session, account, owner_map, site_map)
+    item = _serialize_account(session, account, site_map)
     return AccountDetailResponse(**item.model_dump())
 
 
-def _ensure_account_visible(current_user: StationUser, account: OutlookAccount) -> None:
-    """AI by zb: 校验当前用户是否可查看指定邮箱。"""
-    if current_user.role == USER_ROLE_ADMIN:
-        return
-    if account.owner_user_id == current_user.id:
-        return
-    raise HTTPException(status_code=403, detail="无权查看该邮箱")
-
-
-def _ensure_account_manageable(current_user: StationUser, account: OutlookAccount) -> None:
-    """AI by zb: 校验当前用户是否可操作指定邮箱。"""
-    if current_user.role == USER_ROLE_ADMIN:
-        return
-    if account.owner_user_id == current_user.id:
-        return
-    raise HTTPException(status_code=403, detail="无权操作该邮箱")
-
-
-def _ensure_transfer_target(session: Session, owner_user_id: int) -> StationUser:
-    """AI by zb: 校验批量转移目标用户是否合法。"""
-    owner = _get_user_or_404(session, owner_user_id)
-    if owner.role == USER_ROLE_ADMIN:
-        raise HTTPException(status_code=400, detail="不能转移到管理员用户池")
-    if not owner.enabled:
-        raise HTTPException(status_code=400, detail="目标用户已禁用，无法接收邮箱")
-    return owner
+def _hard_delete_account(session: Session, account: OutlookAccount) -> None:
+    """AI by zb: 硬删除邮箱及其邮件缓存与站点占用。"""
+    account_id = account.id or 0
+    release_all_account_site_usages(session, account_id)
+    for usage in session.exec(select(AccountSiteUsage).where(AccountSiteUsage.account_id == account_id)).all():
+        session.delete(usage)
+    for message in session.exec(select(MailMessage).where(MailMessage.account_id == account_id)).all():
+        session.delete(message)
+    session.delete(account)
 
 
 def _resolve_group_site(session: Session, site_id: int | None) -> Site | None:
@@ -286,27 +243,19 @@ def _resolve_group_site(session: Session, site_id: int | None) -> Site | None:
 
 def _collect_visible_accounts(
     session: Session,
-    current_user: StationUser,
     keyword: str,
-    user_id: int | None,
     scope: str,
     batch_code: str,
     site_code: str,
     group_site_id: int | None = None,
 ) -> list[AccountListItem]:
-    """AI by zb: 按身份、用户、范围和批次筛选可见邮箱列表。"""
-    owner_map = _load_owner_map(session)
+    """AI by zb: 按范围和批次筛选可见邮箱列表。"""
     site_map = load_site_map(session)
     stmt = select(OutlookAccount).where(OutlookAccount.enabled == True)
     current_site = get_site_by_code(session, site_code, enabled_only=True) if site_code.strip() else None
 
     normalized_scope = scope if scope in {"consumed", "pool", "all"} else "consumed"
-    target_user_id = user_id
-    if current_user.role != USER_ROLE_ADMIN:
-        target_user_id = current_user.id
 
-    if target_user_id is not None:
-        stmt = stmt.where(OutlookAccount.owner_user_id == target_user_id)
     if keyword.strip():
         stmt = stmt.where(OutlookAccount.email.contains(keyword.strip()))
     if batch_code.strip():
@@ -317,7 +266,7 @@ def _collect_visible_accounts(
 
     items: list[AccountListItem] = []
     for account in list(session.exec(stmt).all()):
-        serialized = _serialize_account(session, account, owner_map, site_map)
+        serialized = _serialize_account(session, account, site_map)
         consumed_for_site = any(site.site_code == current_site.code for site in serialized.active_sites) if current_site else serialized.is_consumed
         if normalized_scope == "consumed" and not consumed_for_site:
             continue
@@ -332,13 +281,12 @@ def _build_export_csv(items: list[AccountListItem]) -> str:
     """AI by zb: 将邮箱列表转换为 CSV 文本。"""
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["email", "password", "owner_username", "status", "scope", "sites", "inbox_count", "sent_count", "batch_code", "permission_type", "token_status"])
+    writer.writerow(["email", "password", "status", "scope", "sites", "inbox_count", "sent_count", "batch_code", "permission_type", "token_status"])
     for item in items:
         writer.writerow(
             [
                 item.email,
                 item.password,
-                item.owner_username,
                 "启用" if item.enabled else "禁用",
                 "consumed" if item.is_consumed else "pool",
                 " / ".join(site.site_code for site in item.active_sites) or "",
@@ -358,16 +306,8 @@ def import_accounts(
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    """AI by zb: 将批量导入的邮箱账号写入当前用户可管理的用户池。"""
-    current_user = require_admin_authorization(authorization)
-    if current_user.role == USER_ROLE_ADMIN:
-        if request.owner_user_id is None:
-            raise HTTPException(status_code=400, detail="导入时必须指定归属用户")
-        owner = _ensure_transfer_target(session, request.owner_user_id)
-    else:
-        if request.owner_user_id is not None and request.owner_user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="普通用户只能导入到自己的用户池")
-        owner = current_user
+    """AI by zb: 将批量导入的邮箱账号写入全局邮箱池。"""
+    require_admin_authorization(authorization)
     group_site = _resolve_group_site(session, request.group_site_id)
 
     items: list[ImportResultItem] = []
@@ -383,28 +323,20 @@ def import_accounts(
         existing = session.exec(select(OutlookAccount).where(OutlookAccount.email == email)).first()
         now = utcnow()
         if existing:
-            if current_user.role != USER_ROLE_ADMIN and existing.owner_user_id != current_user.id:
-                errors.append(f"第 {index} 条邮箱不可导入")
-                continue
-            if existing.owner_user_id != owner.id or not request.enabled:
+            if not request.enabled:
                 release_all_account_site_usages(session, existing.id or 0)
-                shares = session.exec(select(ShareToken).where(ShareToken.account_id == existing.id)).all()
-                for share in shares:
-                    session.delete(share)
             existing.password = password
             existing.client_id = client_id
             existing.refresh_token = refresh_token
             existing.enabled = request.enabled
             existing.batch_code = request.batch_code
             existing.group_site_id = group_site.id if group_site else None
-            existing.owner_user_id = owner.id
             existing.updated_at = now
             session.add(existing)
             updated += 1
             items.append(ImportResultItem(email=email, action="updated", id=existing.id))
             continue
         account = OutlookAccount(
-            owner_user_id=owner.id,
             email=email,
             password=password,
             client_id=client_id,
@@ -419,11 +351,6 @@ def import_accounts(
         session.flush()
         created += 1
         items.append(ImportResultItem(email=email, action="created", id=account.id))
-
-    if created or updated:
-        owner.last_imported_at = utcnow()
-        owner.updated_at = utcnow()
-        session.add(owner)
 
     session.commit()
     return ImportAccountsResponse(
@@ -443,15 +370,14 @@ def list_accounts(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
     keyword: str = Query(default=""),
-    user_id: int | None = Query(default=None),
     scope: str = Query(default="consumed"),
     batch_code: str = Query(default=""),
     site_code: str = Query(default=""),
     group_site_id: int | None = Query(default=None),
 ):
-    """AI by zb: 按当前用户身份返回池内或已使用邮箱列表。"""
-    current_user = require_admin_authorization(authorization)
-    visible_items = _collect_visible_accounts(session, current_user, keyword, user_id, scope, batch_code, site_code, group_site_id)
+    """AI by zb: 返回池内或已使用邮箱列表。"""
+    require_admin_authorization(authorization)
+    visible_items = _collect_visible_accounts(session, keyword, scope, batch_code, site_code, group_site_id)
     total = len(visible_items)
     total_pages = max(1, ceil(total / page_size)) if total else 1
     start = (page - 1) * page_size
@@ -464,18 +390,15 @@ def export_accounts(
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
     keyword: str = Query(default=""),
-    user_id: int | None = Query(default=None),
     scope: str = Query(default="all"),
     batch_code: str = Query(default=""),
     site_code: str = Query(default=""),
 ):
-    """AI by zb: 导出指定用户范围内的邮箱 CSV。"""
-    current_user = require_admin_authorization(authorization)
-    visible_items = _collect_visible_accounts(session, current_user, keyword, user_id, scope, batch_code, site_code)
+    """AI by zb: 导出指定范围内的邮箱 CSV。"""
+    require_admin_authorization(authorization)
+    visible_items = _collect_visible_accounts(session, keyword, scope, batch_code, site_code)
     csv_content = _build_export_csv(visible_items)
     filename_parts = ["accounts"]
-    if user_id is not None:
-        filename_parts.append(f"user-{user_id}")
     filename_parts.append(scope if scope in {"consumed", "pool", "all"} else "all")
     if batch_code.strip():
         filename_parts.append(batch_code.strip())
@@ -493,8 +416,8 @@ def export_accounts_txt(
     group_site_id: int | None = Query(default=None),
 ):
     """Export all visible accounts matching the mailbox management filters."""
-    current_user = require_admin_authorization(authorization)
-    items = _collect_visible_accounts(session, current_user, keyword, None, scope, "", "", group_site_id)
+    require_admin_authorization(authorization)
+    items = _collect_visible_accounts(session, keyword, scope, "", "", group_site_id)
     content = "\n".join(f"{item.email}----{item.password}" for item in items)
     headers = {"Content-Disposition": f'attachment; filename="accounts-{len(items)}.txt"', "Cache-Control": "no-store"}
     return StreamingResponse(iter([content.encode("utf-8")]), media_type="text/plain; charset=utf-8", headers=headers)
@@ -507,7 +430,7 @@ def batch_update_accounts(
     session: Session = Depends(get_session),
 ):
     """AI by zb: 批量修改邮箱分组或启停状态。"""
-    current_user = require_admin_authorization(authorization)
+    require_admin_authorization(authorization)
     if request.batch_code is None and request.enabled is None and "group_site_id" not in request.model_fields_set:
         raise HTTPException(status_code=400, detail="请指定要修改的字段")
 
@@ -518,7 +441,6 @@ def batch_update_accounts(
     group_site = _resolve_group_site(session, request.group_site_id) if "group_site_id" in request.model_fields_set else None
     now = utcnow()
     for account in accounts:
-        _ensure_account_manageable(current_user, account)
         if request.batch_code is not None:
             account.batch_code = request.batch_code.strip()
         if "group_site_id" in request.model_fields_set:
@@ -527,9 +449,6 @@ def batch_update_accounts(
             account.enabled = request.enabled
             if not request.enabled:
                 release_all_account_site_usages(session, account.id or 0)
-                shares = session.exec(select(ShareToken).where(ShareToken.account_id == account.id)).all()
-                for share in shares:
-                    session.delete(share)
                 account.is_pinned = False
                 account.pinned_at = None
         account.updated_at = now
@@ -544,54 +463,16 @@ def batch_delete_accounts(
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    """AI by zb: 批量软删除邮箱及其关联缓存。"""
-    current_user = require_admin_authorization(authorization)
+    """AI by zb: 批量硬删除邮箱及其关联数据。"""
+    require_admin_authorization(authorization)
     accounts = session.exec(select(OutlookAccount).where(OutlookAccount.id.in_(request.account_ids))).all()
     if len(accounts) != len(set(request.account_ids)):
         raise HTTPException(status_code=404, detail="部分邮箱不存在，无法完成批量删除")
 
-    now = utcnow()
     for account in accounts:
-        _ensure_account_manageable(current_user, account)
-        release_all_account_site_usages(session, account.id or 0)
-        shares = session.exec(select(ShareToken).where(ShareToken.account_id == account.id)).all()
-        for share in shares:
-            session.delete(share)
-        account.enabled = False
-        account.is_pinned = False
-        account.pinned_at = None
-        account.updated_at = now
-        session.add(account)
+        _hard_delete_account(session, account)
     session.commit()
     return OperationStatusResponse(ok=True, email="", message=f"已删除 {len(accounts)} 个邮箱")
-
-
-@router.post("/batch-move", response_model=OperationStatusResponse)
-def batch_move_accounts(
-    request: BatchMoveAccountsRequest,
-    authorization: str | None = Header(default=None),
-    session: Session = Depends(get_session),
-):
-    """AI by zb: 将指定邮箱批量转移到新的用户池。"""
-    require_admin_user(authorization)
-    owner = _ensure_transfer_target(session, request.owner_user_id)
-    accounts = session.exec(select(OutlookAccount).where(OutlookAccount.id.in_(request.account_ids))).all()
-    if len(accounts) != len(set(request.account_ids)):
-        raise HTTPException(status_code=404, detail="部分邮箱不存在，无法完成批量转移")
-
-    now = utcnow()
-    for account in accounts:
-        release_all_account_site_usages(session, account.id or 0)
-        shares = session.exec(select(ShareToken).where(ShareToken.account_id == account.id)).all()
-        for share in shares:
-            session.delete(share)
-        account.owner_user_id = owner.id
-        account.updated_at = now
-        account.is_pinned = False
-        account.pinned_at = None
-        session.add(account)
-    session.commit()
-    return OperationStatusResponse(ok=True, email="", message=f"已转移 {len(accounts)} 个邮箱到 {owner.username}")
 
 
 @router.post("/random-consume", response_model=RandomConsumeAccountResponse)
@@ -601,12 +482,10 @@ def random_consume_account(
     session: Session = Depends(get_session),
 ):
     """AI by zb: 从当前站点对应的账号池中随机使用一个邮箱，并返回其在已消费视图中的分页位置。"""
-    current_user = require_admin_authorization(authorization)
+    require_admin_authorization(authorization)
     pool_items = _collect_visible_accounts(
         session,
-        current_user,
         keyword="",
-        user_id=request.owner_user_id,
         scope="pool",
         batch_code="",
         site_code=request.site_code,
@@ -619,15 +498,13 @@ def random_consume_account(
     site = get_site_by_code(session, request.site_code, enabled_only=True)
     if get_active_account_site_usage(session, account.id or 0, site.id or 0):
         raise HTTPException(status_code=400, detail=f"该邮箱已被站点 {site.name or site.code} 使用")
-    if account.owner_user_id is None:
-        raise HTTPException(status_code=400, detail="该邮箱尚未归属任何用户池，无法随机使用")
 
     now = utcnow()
     session.add(
         AccountSiteUsage(
             account_id=account.id or 0,
             site_id=site.id or 0,
-            user_id=account.owner_user_id,
+            user_id=0,
             source=SITE_SOURCE_MANUAL,
             created_at=now,
             updated_at=now,
@@ -643,9 +520,7 @@ def random_consume_account(
 
     consumed_items = _collect_visible_accounts(
         session,
-        current_user,
         keyword="",
-        user_id=request.owner_user_id,
         scope="consumed",
         batch_code="",
         site_code=request.site_code,
@@ -660,29 +535,16 @@ def random_consume_account(
 def pool_summary(
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
-    user_id: int | None = Query(default=None),
     site_code: str = Query(default=""),
 ):
-    """AI by zb: 返回指定用户或全部用户的池内与已使用数量概览。"""
-    current_user = require_admin_authorization(authorization)
+    """AI by zb: 返回全局或指定站点下的池内与已使用数量概览。"""
+    require_admin_authorization(authorization)
     current_site = get_site_by_code(session, site_code, enabled_only=True) if site_code.strip() else None
-    if current_user.role == USER_ROLE_ADMIN and user_id is None:
-        pool_count, consumed_count = count_pool_and_consumed_accounts(session, site_id=current_site.id if current_site else None)
-        return PoolSummaryResponse(
-            user={"id": 0, "username": current_site.name if current_site else "全部用户", "role": "summary"},
-            pool_count=pool_count,
-            consumed_count=consumed_count,
-        )
-
-    target_user = current_user if current_user.role != USER_ROLE_ADMIN or user_id is None else _get_user_or_404(session, user_id)
-    if target_user.role == USER_ROLE_ADMIN:
-        raise HTTPException(status_code=400, detail="管理员不存在邮箱池")
-    pool_count, consumed_count = count_pool_and_consumed_accounts(session, target_user.id, site_id=current_site.id if current_site else None)
-    return PoolSummaryResponse(
-        user={"id": target_user.id or 0, "username": target_user.username, "role": target_user.role},
-        pool_count=pool_count,
-        consumed_count=consumed_count,
+    pool_count, consumed_count = count_pool_and_consumed_accounts(
+        session,
+        site_id=current_site.id if current_site else None,
     )
+    return PoolSummaryResponse(pool_count=pool_count, consumed_count=consumed_count)
 
 
 @router.get("/{account_id}", response_model=AccountDetailResponse)
@@ -691,13 +553,11 @@ def get_account(
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    """AI by zb: 获取指定邮箱详情，并按角色校验查看权限。"""
-    current_user = require_admin_authorization(authorization)
-    owner_map = _load_owner_map(session)
+    """AI by zb: 获取指定邮箱详情。"""
+    require_admin_authorization(authorization)
     site_map = load_site_map(session)
     account = _get_account_or_404(session, account_id)
-    _ensure_account_visible(current_user, account)
-    return _serialize_detail(session, account, owner_map, site_map)
+    return _serialize_detail(session, account, site_map)
 
 
 @router.patch("/{account_id}", response_model=AccountDetailResponse)
@@ -707,27 +567,12 @@ def update_account(
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    """AI by zb: 更新指定邮箱的置顶、备注、启停与归属信息。"""
-    current_user = require_admin_authorization(authorization)
-    owner_map = _load_owner_map(session)
+    """AI by zb: 更新指定邮箱的置顶、备注、启停与分组信息。"""
+    require_admin_authorization(authorization)
     site_map = load_site_map(session)
     account = _get_account_or_404(session, account_id)
-    _ensure_account_visible(current_user, account)
-    _ensure_account_manageable(current_user, account)
 
     now = utcnow()
-
-    if request.owner_user_id is not None:
-        if current_user.role != USER_ROLE_ADMIN:
-            raise HTTPException(status_code=403, detail="仅管理员可调整邮箱归属")
-        owner = _ensure_transfer_target(session, request.owner_user_id)
-        release_all_account_site_usages(session, account.id or 0)
-        shares = session.exec(select(ShareToken).where(ShareToken.account_id == account.id)).all()
-        for share in shares:
-            session.delete(share)
-        account.owner_user_id = owner.id
-        account.is_pinned = False
-        account.pinned_at = None
 
     if request.note is not None:
         account.note = request.note.strip()
@@ -736,9 +581,6 @@ def update_account(
         account.enabled = request.enabled
         if not request.enabled:
             release_all_account_site_usages(session, account.id or 0)
-            shares = session.exec(select(ShareToken).where(ShareToken.account_id == account.id)).all()
-            for share in shares:
-                session.delete(share)
             account.is_pinned = False
             account.pinned_at = None
 
@@ -756,7 +598,7 @@ def update_account(
     session.add(account)
     session.commit()
     session.refresh(account)
-    return _serialize_detail(session, account, owner_map, site_map)
+    return _serialize_detail(session, account, site_map)
 
 
 @router.post("/{account_id}/consume", response_model=OperationStatusResponse)
@@ -767,15 +609,11 @@ def consume_account(
     session: Session = Depends(get_session),
 ):
     """AI by zb: 手动将指定邮箱标记为某个站点已使用。"""
-    current_user = require_admin_authorization(authorization)
+    require_admin_authorization(authorization)
     account = _get_account_or_404(session, account_id)
-    _ensure_account_visible(current_user, account)
-    _ensure_account_manageable(current_user, account)
 
     if not account.enabled:
         raise HTTPException(status_code=400, detail="该邮箱已不可用，无法继续使用")
-    if account.owner_user_id is None:
-        raise HTTPException(status_code=400, detail="该邮箱尚未归属任何用户池，无法手动使用")
 
     site = get_site_by_code(session, request.site_code, enabled_only=True)
     existing_usage = get_active_account_site_usage(session, account.id or 0, site.id or 0)
@@ -786,7 +624,7 @@ def consume_account(
     usage = AccountSiteUsage(
         account_id=account.id or 0,
         site_id=site.id or 0,
-        user_id=account.owner_user_id,
+        user_id=0,
         source=SITE_SOURCE_MANUAL,
         created_at=now,
         updated_at=now,
@@ -810,10 +648,8 @@ def release_account(
     session: Session = Depends(get_session),
 ):
     """AI by zb: 退回指定邮箱在某个站点上的使用记录。"""
-    current_user = require_admin_authorization(authorization)
+    require_admin_authorization(authorization)
     account = _get_account_or_404(session, account_id)
-    _ensure_account_visible(current_user, account)
-    _ensure_account_manageable(current_user, account)
 
     site = get_site_by_code(session, request.site_code, enabled_only=False)
     usage = get_active_account_site_usage(session, account.id or 0, site.id or 0)
@@ -833,20 +669,10 @@ def delete_account(
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    """AI by zb: 软删除指定邮箱，使其对整站不可见。"""
-    current_user = require_admin_authorization(authorization)
+    """AI by zb: 硬删除指定邮箱及其邮件缓存与站点占用。"""
+    require_admin_authorization(authorization)
     account = _get_account_or_404(session, account_id)
-    _ensure_account_visible(current_user, account)
-    _ensure_account_manageable(current_user, account)
-
-    release_all_account_site_usages(session, account.id or 0)
-    shares = session.exec(select(ShareToken).where(ShareToken.account_id == account.id)).all()
-    for share in shares:
-        session.delete(share)
-    account.enabled = False
-    account.is_pinned = False
-    account.pinned_at = None
-    account.updated_at = utcnow()
-    session.add(account)
+    email = account.email
+    _hard_delete_account(session, account)
     session.commit()
-    return OperationStatusResponse(ok=True, email=account.email, message="邮箱已软删除并从整站隐藏")
+    return OperationStatusResponse(ok=True, email=email, message="邮箱及其邮件缓存已删除")

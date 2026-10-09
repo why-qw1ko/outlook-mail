@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { ChevronRight, Info, Inbox, LayoutGrid, LogOut, Mail, Menu, Settings2, Users } from 'lucide-react'
+import { ChevronRight, Info, Inbox, KeyRound, LayoutGrid, LogOut, Mail, Menu, Settings2 } from 'lucide-react'
 import { clearAdminToken } from '@/lib/api'
 import type { UserIdentity } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -12,7 +12,7 @@ import { ThemeToggle } from '@/components/common/ThemeToggle'
 const navItems = [
   { to: '/', label: '邮箱站', icon: Mail, end: true },
   { to: '/accounts', label: '邮箱管理', icon: LayoutGrid },
-  { to: '/users', label: '用户', icon: Users },
+  { to: '/api-keys', label: '接入密钥', icon: KeyRound },
   { to: '/sites', label: '站点', icon: Settings2 },
   { to: '/about', label: '关于', icon: Info },
 ]

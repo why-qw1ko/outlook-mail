@@ -40,44 +40,41 @@ class AdminLoginResponse(BaseModel):
 
 
 class UserItemResponse(UserIdentityResponse):
-    """AI by zb: 描述后台用户列表项。"""
+    """AI by zb: 描述后台登录账号信息。"""
 
     enabled: bool
-    pool_count: int = 0
-    consumed_count: int = 0
-    last_imported_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
 
-class UserListResponse(BaseModel):
-    """AI by zb: 描述后台用户分页或列表结果。"""
+class ApiKeyItemResponse(BaseModel):
+    """AI by zb: 描述开放接口接入密钥。"""
 
-    items: list[UserItemResponse]
-
-
-class UserApiKeyResponse(BaseModel):
-    """AI by zb: 描述用户级开放接口 API Key 信息。"""
-
-    user_id: int
-    username: str
-    api_key: str
+    id: int
+    name: str
+    key: str
+    enabled: bool
+    created_at: datetime
     updated_at: datetime
 
 
-class UserCreateRequest(BaseModel):
-    """AI by zb: 定义创建后台用户请求。"""
+class ApiKeyListResponse(BaseModel):
+    """AI by zb: 描述接入密钥列表。"""
 
-    username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
-    role: str = "user"
+    items: list[ApiKeyItemResponse]
+
+
+class ApiKeyCreateRequest(BaseModel):
+    """AI by zb: 定义创建接入密钥请求。"""
+
+    name: str = Field(min_length=1)
     enabled: bool = True
 
 
-class UserUpdateRequest(BaseModel):
-    """AI by zb: 定义更新后台用户请求。"""
+class ApiKeyUpdateRequest(BaseModel):
+    """AI by zb: 定义更新接入密钥请求。"""
 
-    password: Optional[str] = Field(default=None, min_length=1)
+    name: Optional[str] = Field(default=None, min_length=1)
     enabled: Optional[bool] = None
 
 
@@ -121,7 +118,6 @@ class ImportAccountsRequest(BaseModel):
     enabled: bool = True
     batch_code: str = ""
     group_site_id: Optional[int] = None
-    owner_user_id: Optional[int] = None
 
 
 class ImportResultItem(BaseModel):
@@ -167,8 +163,6 @@ class AccountListItem(BaseModel):
     group_site_code: str = ""
     group_site_name: str = ""
     note: str
-    owner_user_id: Optional[int] = None
-    owner_username: str = ""
     is_consumed: bool = False
     created_at: datetime
     updated_at: datetime
@@ -195,9 +189,8 @@ class AccountListResponse(BaseModel):
 
 
 class PoolSummaryResponse(BaseModel):
-    """AI by zb: 描述指定用户邮箱池概览。"""
+    """AI by zb: 描述邮箱池概览。"""
 
-    user: UserIdentityResponse
     pool_count: int
     consumed_count: int
 
@@ -209,12 +202,11 @@ class AccountDetailResponse(AccountListItem):
 
 
 class UpdateAccountRequest(BaseModel):
-    """AI by zb: 定义账号启停、备注、分组与归属修改的请求体。"""
+    """AI by zb: 定义账号启停、备注、分组修改的请求体。"""
 
     enabled: Optional[bool] = None
     note: Optional[str] = None
     is_pinned: Optional[bool] = None
-    owner_user_id: Optional[int] = None
     batch_code: Optional[str] = None
     group_site_id: Optional[int] = None
 
@@ -246,18 +238,10 @@ class ReleaseAccountUsageRequest(BaseModel):
     site_code: str = Field(min_length=1)
 
 
-class BatchMoveAccountsRequest(BaseModel):
-    """AI by zb: 定义批量转移邮箱归属用户的请求体。"""
-
-    account_ids: list[int] = Field(min_length=1)
-    owner_user_id: int
-
-
 class RandomConsumeAccountRequest(BaseModel):
     """AI by zb: 定义工作台随机使用池内邮箱请求。"""
 
     site_code: str = Field(min_length=1)
-    owner_user_id: Optional[int] = None
     page_size: int = Field(default=5, ge=1, le=200)
 
 
@@ -350,35 +334,6 @@ class OperationStatusResponse(BaseModel):
     ok: bool
     message: str
     email: str = ""
-
-
-class ShareCreateRequest(BaseModel):
-    """AI by zb: 定义临时授权链接创建请求。"""
-
-    days: int = Field(default=30, ge=1, le=365)
-
-
-class ShareCreateResponse(BaseModel):
-    """AI by zb: 描述临时授权链接创建结果。"""
-
-    token: str
-    url: str
-    expires_at: datetime
-
-
-class PublicShareAccountResponse(BaseModel):
-    """Only the mailbox identity needed by the public share page."""
-
-    email: str
-
-
-class PublicShareResponse(BaseModel):
-    """AI by zb: 描述公开访问页使用的只读数据。"""
-
-    account: PublicShareAccountResponse
-    inbox: list[MessageItemResponse]
-    sent: list[MessageItemResponse]
-    expires_at: datetime
 
 
 class HealthResponse(BaseModel):

@@ -15,11 +15,10 @@ from .auth import require_admin_authorization
 from .database import init_db
 from .routers.admin_auth import router as admin_auth_router
 from .routers.accounts import router as accounts_router
+from .routers.api_keys import router as api_keys_router
 from .routers.messages import router as messages_router
 from .routers.open_api import router as open_api_router
-from .routers.public_share import router as public_share_router
 from .routers.sites import router as sites_router
-from .routers.users import router as users_router
 from .schemas import HealthResponse
 from .services.mail_sync_service import run_active_mailbox_sync_loop
 from .settings import API_PREFIX, APP_NAME, FRONTEND_DIR, STATIC_DIR
@@ -68,11 +67,8 @@ async def admin_auth_middleware(request: Request, call_next):
     path = request.url.path
     if not path.startswith(API_PREFIX):
         return await call_next(request)
-    if path in _ADMIN_BYPASS_PATHS or path.startswith(f"{API_PREFIX}/open/") or path.startswith(f"{API_PREFIX}/public/"):
-        response = await call_next(request)
-        if path.startswith(f"{API_PREFIX}/public/shares/"):
-            response.headers["Cache-Control"] = "no-store"
-        return response
+    if path in _ADMIN_BYPASS_PATHS or path.startswith(f"{API_PREFIX}/open/"):
+        return await call_next(request)
     try:
         require_admin_authorization(request.headers.get("Authorization"))
     except HTTPException as exc:
@@ -83,10 +79,9 @@ async def admin_auth_middleware(request: Request, call_next):
 app.include_router(admin_auth_router, prefix=API_PREFIX)
 app.include_router(accounts_router, prefix=API_PREFIX)
 app.include_router(messages_router, prefix=API_PREFIX)
-app.include_router(users_router, prefix=API_PREFIX)
+app.include_router(api_keys_router, prefix=API_PREFIX)
 app.include_router(sites_router, prefix=API_PREFIX)
 app.include_router(open_api_router, prefix=API_PREFIX)
-app.include_router(public_share_router, prefix=API_PREFIX)
 
 
 @app.get(f"{API_PREFIX}/health", response_model=HealthResponse)

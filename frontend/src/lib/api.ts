@@ -2,6 +2,8 @@ import type {
   AccountDetail,
   AccountListResponse,
   AccountScope,
+  ApiKeyItem,
+  ApiKeyListResponse,
   AuthStatusResponse,
   ImportResult,
   LoginResponse,
@@ -10,15 +12,10 @@ import type {
   MessageItem,
   OperationStatusPayload,
   PoolSummary,
-  PublicSharePayload,
   RandomConsumeAccountResponse,
-  ShareResult,
   SiteItem,
   SiteListResponse,
   SyncResponse,
-  UserApiKeyPayload,
-  UserItem,
-  UserListResponse,
 } from './types'
 
 const ADMIN_TOKEN_KEY = 'oms_admin_token'
@@ -66,36 +63,32 @@ export function login(payload: { username: string; password: string }) {
   })
 }
 
-export function fetchUsers() {
-  return apiFetch<UserListResponse>('/api/users')
+export function fetchApiKeys() {
+  return apiFetch<ApiKeyListResponse>('/api/api-keys')
 }
 
-export function createUser(payload: { username: string; password: string; role?: string; enabled?: boolean }) {
-  return apiFetch<UserItem>('/api/users', {
+export function createApiKey(payload: { name: string; enabled?: boolean }) {
+  return apiFetch<ApiKeyItem>('/api/api-keys', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
 }
 
-export function updateUser(userId: number, payload: { password?: string; enabled?: boolean }) {
-  return apiFetch(`/api/users/${userId}`, {
+export function updateApiKey(keyId: number, payload: { name?: string; enabled?: boolean }) {
+  return apiFetch<ApiKeyItem>(`/api/api-keys/${keyId}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   })
 }
 
-export function fetchUserApiKey(userId: number) {
-  return apiFetch<UserApiKeyPayload>(`/api/users/${userId}/api-key`)
-}
-
-export function regenerateUserApiKey(userId: number) {
-  return apiFetch<UserApiKeyPayload>(`/api/users/${userId}/api-key/regenerate`, {
+export function regenerateApiKey(keyId: number) {
+  return apiFetch<ApiKeyItem>(`/api/api-keys/${keyId}/regenerate`, {
     method: 'POST',
   })
 }
 
-export function deleteUser(userId: number) {
-  return apiFetch<OperationStatusPayload>(`/api/users/${userId}`, {
+export function deleteApiKey(keyId: number) {
+  return apiFetch<OperationStatusPayload>(`/api/api-keys/${keyId}`, {
     method: 'DELETE',
   })
 }
@@ -131,7 +124,6 @@ export function fetchAccounts(params: {
   scope: AccountScope
   batchCode?: string
   groupSiteId?: number | null
-  userId?: number | null
   siteCode?: string
 }) {
   const search = new URLSearchParams()
@@ -142,7 +134,6 @@ export function fetchAccounts(params: {
   search.set('batch_code', params.batchCode || '')
   if (params.groupSiteId) search.set('group_site_id', String(params.groupSiteId))
   search.set('site_code', params.siteCode || '')
-  if (params.userId) search.set('user_id', String(params.userId))
   return apiFetch<AccountListResponse>(`/api/accounts?${search.toString()}`)
 }
 
@@ -150,7 +141,6 @@ export async function exportAccounts(params: {
   keyword?: string
   scope?: AccountScope
   batchCode?: string
-  userId?: number | null
   siteCode?: string
 }) {
   const search = new URLSearchParams()
@@ -158,7 +148,6 @@ export async function exportAccounts(params: {
   search.set('scope', params.scope || 'all')
   search.set('batch_code', params.batchCode || '')
   search.set('site_code', params.siteCode || '')
-  if (params.userId) search.set('user_id', String(params.userId))
 
   const headers = new Headers()
   const token = getAdminToken()
@@ -201,7 +190,6 @@ export function updateAccount(
     enabled?: boolean
     note?: string
     is_pinned?: boolean
-    owner_user_id?: number
     batch_code?: string
     group_site_id?: number | null
   },
@@ -231,16 +219,8 @@ export function batchDeleteAccounts(accountIds: number[]) {
   })
 }
 
-export function moveAccountsToUserPool(payload: { account_ids: number[]; owner_user_id: number }) {
-  return apiFetch<{ ok: boolean; message: string }>('/api/accounts/batch-move', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
 export function consumeRandomPoolAccount(payload: {
   site_code: string
-  owner_user_id?: number | null
   page_size?: number
 }) {
   return apiFetch<RandomConsumeAccountResponse>('/api/accounts/random-consume', {
@@ -254,7 +234,6 @@ export function importAccounts(payload: {
   enabled?: boolean
   batch_code?: string
   group_site_id?: number | null
-  owner_user_id?: number | null
 }) {
   return apiFetch<ImportResult>('/api/accounts/import', {
     method: 'POST',
@@ -262,9 +241,8 @@ export function importAccounts(payload: {
   })
 }
 
-export function fetchPoolSummary(userId?: number | null, siteCode?: string) {
+export function fetchPoolSummary(siteCode?: string) {
   const search = new URLSearchParams()
-  if (userId) search.set('user_id', String(userId))
   if (siteCode) search.set('site_code', siteCode)
   const qs = search.toString()
   return apiFetch<PoolSummary>(`/api/accounts/pool-summary${qs ? `?${qs}` : ''}`)
@@ -314,25 +292,4 @@ export function sendMail(
     method: 'POST',
     body: JSON.stringify(payload),
   })
-}
-
-export function createShare(accountId: number, days: number) {
-  return apiFetch<ShareResult>(`/api/accounts/${accountId}/shares`, {
-    method: 'POST',
-    body: JSON.stringify({ days }),
-  })
-}
-
-export function fetchPublicShare(token: string) {
-  return apiFetch<PublicSharePayload>(`/api/public/shares/${token}`)
-}
-
-export function syncPublicShare(token: string) {
-  return apiFetch<PublicSharePayload>(`/api/public/shares/${token}/sync`, {
-    method: 'POST',
-  })
-}
-
-export function fetchPublicMessage(token: string, messageId: number) {
-  return apiFetch<MessageDetail>(`/api/public/shares/${token}/messages/${messageId}`)
 }

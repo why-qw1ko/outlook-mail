@@ -13,7 +13,7 @@ from fastapi import Header, HTTPException
 from sqlmodel import Session, select
 
 from .database import engine
-from .models import StationUser, USER_ROLE_ADMIN
+from .models import ApiKey, StationUser, USER_ROLE_ADMIN
 from .passwords import verify_password
 from .settings import ADMIN_JWT_SECRET, ADMIN_PASSWORD, APP_NAME
 
@@ -140,22 +140,22 @@ def authenticate_user(username: str, password: str) -> StationUser:
         return user
 
 
-def require_open_api_user(
+def require_open_api_key(
     authorization: Optional[str] = Header(default=None),
     x_api_key: Optional[str] = Header(default=None),
-) -> StationUser:
-    """AI by zb: 校验用户级开放接口 API Key 并返回其绑定的普通用户。"""
+) -> ApiKey:
+    """AI by zb: 校验开放接口接入密钥并返回对应记录。"""
     sent_key = str(x_api_key or "").strip()
     token = str(authorization or "").strip()
     candidate = sent_key or (token[7:].strip() if token.startswith("Bearer ") else "")
     if not candidate:
-        raise HTTPException(status_code=401, detail="未提供开放接口 API Key")
+        raise HTTPException(status_code=401, detail="未提供开放接口接入密钥")
 
     with Session(engine) as session:
-        user = session.exec(select(StationUser).where(StationUser.api_key == candidate)).first()
-        if not user or not user.enabled or user.role == USER_ROLE_ADMIN:
+        api_key = session.exec(select(ApiKey).where(ApiKey.key == candidate)).first()
+        if not api_key or not api_key.enabled:
             raise HTTPException(status_code=401, detail="开放接口认证失败")
-        return user
+        return api_key
 
 
 def build_user_identity(user: StationUser) -> dict:

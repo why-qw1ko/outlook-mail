@@ -61,7 +61,6 @@ DATABASE_URL = _normalize_database_url(get_setting(
     f"sqlite:///{(ROOT_DIR / 'outlook_mail_station.db').as_posix()}",
 ))
 DEFAULT_SYNC_LIMIT = int(get_setting("OUTLOOK_MAIL_STATION_SYNC_LIMIT", "30") or "30")
-DEFAULT_SHARE_DAYS = int(get_setting("OUTLOOK_MAIL_STATION_SHARE_DAYS", "30") or "30")
 AUTO_REFRESH_SECONDS = int(get_setting("OUTLOOK_MAIL_STATION_AUTO_REFRESH", "10") or "10")
 OPEN_API_SYNC_COOLDOWN_SECONDS = int(get_setting("OUTLOOK_MAIL_STATION_OPEN_API_SYNC_COOLDOWN_SECONDS", "60") or "60")
 ACTIVE_MAILBOX_SYNC_INTERVAL_SECONDS = int(get_setting("OUTLOOK_MAIL_STATION_ACTIVE_MAILBOX_SYNC_INTERVAL_SECONDS", "5") or "5")
