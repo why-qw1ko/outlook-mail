@@ -18,8 +18,11 @@ import {
   deleteAccount,
   exportAccountsTxt,
   fetchAccounts,
+  fetchAccountCredentials,
   fetchSites,
   importAccounts,
+  updateAccount,
+  validateAccountOAuth,
 } from '@/lib/api'
 import { copyText } from '@/lib/format'
 import type { AccountItem, AccountScope, SiteItem } from '@/lib/types'
@@ -29,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { Badge, Label, Select } from '@/components/ui/primitives'
 import { Dialog } from '@/components/common/AppDialog'
+import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useToast } from '@/components/ui/toast'
 import { EmptyState, LoadingState, SearchEmpty } from '@/components/common/states'
 
@@ -38,6 +42,7 @@ type CopyMode = 'email' | 'password' | 'combo'
 
 export function AccountsManagePage() {
   const toast = useToast()
+  const confirm = useConfirm()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const loadSequence = useRef(0)
 
@@ -66,6 +71,7 @@ export function AccountsManagePage() {
   const [groupLoading, setGroupLoading] = useState(false)
 
   const [busy, setBusy] = useState(false)
+  const [validatingId, setValidatingId] = useState<number | null>(null)
   const [exportLoading, setExportLoading] = useState(false)
 
   useEffect(() => {
@@ -90,6 +96,7 @@ export function AccountsManagePage() {
         pageSize: PAGE_SIZE,
         keyword: searchKeyword,
         scope,
+        includeDisabled: true,
         groupSiteId: groupFilter ? Number(groupFilter) : null,
       })
       if (sequence !== loadSequence.current) return
@@ -151,10 +158,19 @@ export function AccountsManagePage() {
       toast.error('请先勾选邮箱')
       return
     }
+    let passwords = new Map<number, string>()
+    if (mode !== 'email') {
+      try {
+        passwords = new Map((await fetchAccountCredentials(selectedItems.map((item) => item.id))).map((item) => [item.id, item.password]))
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '获取密码失败')
+        return
+      }
+    }
     const lines = selectedItems.map((item) => {
       if (mode === 'email') return item.email
-      if (mode === 'password') return item.password || ''
-      return `${item.email}----${item.password || ''}`
+      if (mode === 'password') return passwords.get(item.id) || ''
+      return `${item.email}----${passwords.get(item.id) || ''}`
     })
     await copyText(lines.join('\n'))
     toast.success(`已复制 ${selectedItems.length} 条（${
@@ -170,10 +186,13 @@ export function AccountsManagePage() {
     setExportLoading(true)
     try {
       const selected = selectedItems.length > 0
+      const passwords = selected
+        ? new Map((await fetchAccountCredentials(selectedItems.map((item) => item.id))).map((item) => [item.id, item.password]))
+        : new Map<number, string>()
       const result = selected
         ? {
             blob: new Blob(
-              [selectedItems.map((item) => `${item.email}----${item.password || ''}`).join('\n')],
+              [selectedItems.map((item) => `${item.email}----${passwords.get(item.id) || ''}`).join('\n')],
               { type: 'text/plain;charset=utf-8' },
             ),
             filename: `accounts-${selectedItems.length}.txt`,
@@ -256,7 +275,7 @@ export function AccountsManagePage() {
 
   const applyBatchDelete = async () => {
     if (selectedIds.size === 0) return
-    if (!window.confirm(`确认硬删除勾选的 ${selectedIds.size} 个邮箱？邮件缓存会一并清理，且不可恢复。`)) return
+    if (!(await confirm({ title: '删除邮箱', description: `将删除选中的 ${selectedIds.size} 个邮箱、邮件缓存和站点占用，此操作无法撤销。`, confirmText: '删除', destructive: true }))) return
     setBusy(true)
     try {
       const result = await batchDeleteAccounts(Array.from(selectedIds))
@@ -269,6 +288,19 @@ export function AccountsManagePage() {
     }
   }
 
+  const setStationVisibility = async (visible: boolean) => {
+    setBusy(true)
+    try {
+      await batchUpdateAccounts({ account_ids: Array.from(selectedIds), show_in_station: visible })
+      toast.success(visible ? '已加入邮箱站' : '已从邮箱站隐藏')
+      await load()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '更新邮箱站状态失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="page-layout">
       <header className="page-header block">
@@ -276,7 +308,7 @@ export function AccountsManagePage() {
           <div>
             <h1 className="text-headline text-lg leading-tight">邮箱管理</h1>
             <p className="text-paragraph text-xs">
-              共 {total} 个邮箱 · 勾选后可批量复制 / 改分组 / 删除
+              共 {total} 个邮箱
             </p>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -296,10 +328,10 @@ export function AccountsManagePage() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <div className="relative w-[220px]">
+          <div className="relative w-full sm:w-[220px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="h-9 pl-9"
+              className="pl-9"
               placeholder="搜索邮箱"
               value={keyword}
               onChange={(e) => {
@@ -314,7 +346,7 @@ export function AccountsManagePage() {
             />
           </div>
           <Select
-            className="h-9 w-[140px]"
+            className="w-[140px]"
             value={scope}
             onChange={(e) => {
               setScope(e.target.value as AccountScope)
@@ -326,7 +358,7 @@ export function AccountsManagePage() {
             <option value="consumed">使用中</option>
           </Select>
           <Select
-            className="h-9 w-[160px]"
+            className="w-[160px]"
             value={groupFilter}
             onChange={(e) => {
               setGroupFilter(e.target.value)
@@ -342,11 +374,11 @@ export function AccountsManagePage() {
           </Select>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-accent/30 px-3 py-2">
+        {selectedIds.size > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border/70 bg-accent/30 px-3 py-2">
           <span className="text-paragraph text-xs">
             已勾选 <strong className="text-foreground">{selectedIds.size}</strong> 项
           </span>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             <Button variant="outline" size="sm" onClick={() => void copySelected('email')} disabled={!selectedIds.size}>
               <Copy className="h-3.5 w-3.5" />
               复制账户
@@ -362,6 +394,12 @@ export function AccountsManagePage() {
             <Button variant="outline" size="sm" onClick={() => setGroupDialogOpen(true)} disabled={!selectedIds.size}>
               批量改分组
             </Button>
+            <Button variant="outline" size="sm" onClick={() => void setStationVisibility(true)} disabled={!selectedIds.size || busy}>
+              批量加入邮箱站
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void setStationVisibility(false)} disabled={!selectedIds.size || busy}>
+              批量移出邮箱站
+            </Button>
             <Button
               variant="destructive"
               size="sm"
@@ -372,7 +410,7 @@ export function AccountsManagePage() {
               批量删除
             </Button>
           </div>
-        </div>
+        </div>}
       </header>
 
       <div className="page-content">
@@ -385,13 +423,15 @@ export function AccountsManagePage() {
             <EmptyState
               icon={<Table2 className="h-6 w-6" />}
               title="暂无邮箱"
-              description="点击右上角「导入」按行批量添加账号"
+              description="导入邮箱后可在此管理"
             />
           )
         ) : (
+          <>
+          <p className="mb-2 text-xs text-muted-foreground sm:hidden">左右滑动查看全部字段</p>
           <div className="surface overflow-hidden">
             <div>
-              <Table className="w-full min-w-[920px] border-collapse text-sm">
+              <Table className="w-full min-w-[920px] border-collapse text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
                 <TableHeader>
                   <TableRow className="border-b border-border bg-accent/40 text-left text-xs text-muted-foreground">
                     <TableHead className="w-12 px-3 py-3">
@@ -406,6 +446,8 @@ export function AccountsManagePage() {
                     <TableHead className="w-14 px-3 py-3">序号</TableHead>
                     <TableHead className="px-3 py-3">邮箱</TableHead>
                     <TableHead className="px-3 py-3">密码</TableHead>
+                    <TableHead className="px-3 py-3">邮箱站</TableHead>
+                    <TableHead className="px-3 py-3">业务状态</TableHead>
                     <TableHead className="px-3 py-3">分组</TableHead>
                     <TableHead className="px-3 py-3">令牌状态</TableHead>
                     <TableHead className="px-3 py-3">权限类型</TableHead>
@@ -460,21 +502,52 @@ export function AccountsManagePage() {
                         <TableCell className="px-3 py-2.5">
                           <div className="flex items-center gap-1.5">
                             <span className="max-w-[120px] truncate font-mono text-xs text-muted-foreground">
-                              {item.password ? '••••••••' : '—'}
+                              {item.has_password ? '••••••••' : '—'}
                             </span>
                             <button
                               type="button"
                               className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-primary"
                               title="复制密码"
-                              disabled={!item.password}
+                              disabled={!item.has_password}
                               onClick={async () => {
-                                await copyText(item.password)
-                                toast.success('密码已复制')
+                                try {
+                                  const [credential] = await fetchAccountCredentials([item.id])
+                                  await copyText(credential.password)
+                                  toast.success('密码已复制')
+                                } catch (error) {
+                                  toast.error(error instanceof Error ? error.message : '获取密码失败')
+                                }
                               }}
                             >
                               <Copy className="h-3.5 w-3.5" />
                             </button>
                           </div>
+                        </TableCell>
+                        <TableCell className="px-3 py-2.5">
+                          <label className="flex items-center gap-2 text-xs">
+                            <input type="checkbox" checked={item.show_in_station}
+                              aria-label={`${item.email} 在邮箱站显示`}
+                              onChange={async (event) => {
+                                try {
+                                  await updateAccount(item.id, { show_in_station: event.target.checked })
+                                  await load()
+                                } catch (error) {
+                                  toast.error(error instanceof Error ? error.message : '更新邮箱站状态失败')
+                                }
+                              }} />
+                            {item.show_in_station ? '显示' : '隐藏'}
+                          </label>
+                        </TableCell>
+                        <TableCell className="px-3 py-2.5">
+                          <Button variant="ghost" size="sm" onClick={async () => {
+                            if (item.enabled && !(await confirm({ title: '停用邮箱', description: '停用后将释放该邮箱的全部站点占用。', confirmText: '停用', destructive: true }))) return
+                            try {
+                              await updateAccount(item.id, { enabled: !item.enabled })
+                              await load()
+                            } catch (error) {
+                              toast.error(error instanceof Error ? error.message : '更新状态失败')
+                            }
+                          }}>{item.enabled ? '已启用' : '已停用'}</Button>
                         </TableCell>
                         <TableCell className="px-3 py-2.5">
                           {item.group_site_id ? (
@@ -484,7 +557,7 @@ export function AccountsManagePage() {
                           )}
                         </TableCell>
                         <TableCell className="px-3 py-2.5">
-                          <Badge tone={item.token_status === '已配置' ? 'success' : 'outline'}>
+                          <Badge tone={item.has_oauth ? 'secondary' : 'outline'}>
                             {item.token_status || '未配置'}
                           </Badge>
                         </TableCell>
@@ -495,12 +568,27 @@ export function AccountsManagePage() {
                         </TableCell>
                         <TableCell className="px-3 py-2.5">
                           <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="sm" disabled={validatingId !== null} loading={validatingId === item.id} onClick={async () => {
+                              setValidatingId(item.id)
+                              try {
+                                toast.success((await validateAccountOAuth(item.id)).message)
+                              } catch (error) {
+                                toast.error(error instanceof Error ? error.message : '验证失败')
+                              } finally {
+                                setValidatingId(null)
+                              }
+                            }}>验证连接</Button>
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={async () => {
-                                await copyText(`${item.email}----${item.password || ''}`)
-                                toast.success('已复制账户----密码')
+                                try {
+                                  const [credential] = await fetchAccountCredentials([item.id])
+                                  await copyText(`${item.email}----${credential.password}`)
+                                  toast.success('已复制账户----密码')
+                                } catch (error) {
+                                  toast.error(error instanceof Error ? error.message : '获取密码失败')
+                                }
                               }}
                             >
                               复制
@@ -510,7 +598,7 @@ export function AccountsManagePage() {
                               size="sm"
                               className="text-destructive"
                               onClick={async () => {
-                                if (!window.confirm(`确认硬删除 ${item.email}？邮件缓存会一并清理，且不可恢复。`)) return
+                                if (!(await confirm({ title: '删除邮箱', description: `将删除 ${item.email}、邮件缓存和站点占用，此操作无法撤销。`, confirmText: '删除', destructive: true }))) return
                                 try {
                                   await deleteAccount(item.id)
                                   toast.success('已删除')
@@ -555,6 +643,7 @@ export function AccountsManagePage() {
               </div>
             </div>
           </div>
+          </>
         )}
       </div>
 
@@ -574,7 +663,7 @@ export function AccountsManagePage() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         title="导入邮箱"
-        description="支持文本粘贴或选择文件按行批量导入；格式 email----password 或 email----password----client_id----refresh_token"
+        description="每行一个邮箱；收发邮件需要 OAuth 凭据。已有邮箱仅更新提供的凭据。"
         footer={
           <>
             <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
@@ -603,7 +692,7 @@ export function AccountsManagePage() {
               rows={12}
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
-              placeholder={'demo@outlook.com----password\ndemo2@outlook.com----password----client_id----refresh_token'}
+              placeholder={'邮箱----密码\n邮箱----client_id----refresh_token\n邮箱----密码----client_id----refresh_token'}
             />
           </div>
           <div className="space-y-2">
@@ -649,7 +738,7 @@ export function AccountsManagePage() {
             ))}
           </Select>
           <p className="text-paragraph text-xs leading-relaxed">
-            分组只用于整理和筛选邮箱，不产生占用关系；业务领取/释放走「站点占用」，由开放接口或工作台操作。
+            分组用于筛选邮箱，不影响站点占用。
           </p>
         </div>
       </Dialog>

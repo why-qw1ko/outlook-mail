@@ -80,6 +80,7 @@ class OutlookAccount(SQLModel, table=True):
     group_site_id: Optional[int] = Field(default=None, index=True)
     enabled: bool = True
     note: str = ""
+    show_in_station: bool = False
     is_pinned: bool = False
     pinned_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utcnow)

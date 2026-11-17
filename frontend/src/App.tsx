@@ -6,6 +6,7 @@ import { ThemeProvider } from '@/lib/theme'
 import { ToastProvider } from '@/components/ui/toast'
 import { LoadingState } from '@/components/common/states'
 import { AppShell } from '@/components/layout/AppShell'
+import { ConfirmProvider } from '@/components/common/ConfirmDialog'
 import { LoginPage } from '@/pages/LoginPage'
 import { StationPage } from '@/pages/StationPage'
 import { AccountsManagePage } from '@/pages/AccountsManagePage'
@@ -64,10 +65,12 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider>
         <ToastProvider>
+          <ConfirmProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
+          </ConfirmProvider>
         </ToastProvider>
       </ThemeProvider>
     </BrowserRouter>

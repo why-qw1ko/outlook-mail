@@ -9,10 +9,12 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/primitives'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState, LoadingState } from '@/components/common/states'
+import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useToast } from '@/components/ui/toast'
 import { formatTime } from '@/lib/format'
 
 export function ApiKeysPage() {
+  const confirm = useConfirm()
   const [items, setItems] = useState<ApiKeyItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -64,7 +66,7 @@ export function ApiKeysPage() {
   }
 
   const handleRegenerate = async (item: ApiKeyItem) => {
-    if (!window.confirm(`确认轮换密钥「${item.name}」？旧密钥将立即失效。`)) return
+    if (!(await confirm({ title: '轮换密钥', description: `轮换「${item.name}」后，旧密钥将立即失效。`, confirmText: '轮换', destructive: true }))) return
     try {
       await regenerateApiKey(item.id)
       toast.success('已轮换密钥')
@@ -75,7 +77,7 @@ export function ApiKeysPage() {
   }
 
   const handleDelete = async (item: ApiKeyItem) => {
-    if (!window.confirm(`确认删除密钥「${item.name}」？使用该密钥的业务将无法调用开放接口。`)) return
+    if (!(await confirm({ title: '删除密钥', description: `删除「${item.name}」后，使用该密钥的业务将无法调用开放接口。`, confirmText: '删除', destructive: true }))) return
     try {
       await deleteApiKey(item.id)
       toast.success('已删除密钥')
@@ -87,31 +89,31 @@ export function ApiKeysPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-3 border-b px-6 py-5">
+      <div className="page-header">
         <div>
-          <h1 className="text-headline text-xl">接入密钥</h1>
-          <p className="mt-1 text-sm text-muted-foreground">开放接口使用接入密钥调用，可多把、可轮换。</p>
+          <h1 className="text-headline">接入密钥</h1>
+          <p className="text-paragraph text-xs">用于调用开放接口</p>
         </div>
         <Badge tone="secondary" className="ml-auto">{loading ? '加载中…' : items.length + ' 把密钥'}</Badge>
         <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="h-4 w-4" />
           新建密钥
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="page-content">
         {loading ? (
           <LoadingState label="正在加载接入密钥…" />
         ) : error ? (
           <EmptyState title="加载失败" description={error} />
         ) : items.length === 0 ? (
-          <EmptyState title="还没有接入密钥" description="创建密钥后，业务脚本可通过 X-API-Key 调用开放接口。" />
+          <EmptyState title="暂无接入密钥" description="创建密钥后可调用开放接口" />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {items.map((item) => (
-              <Card key={item.id} className="animate-fade-in p-5 shadow-soft">
+              <Card key={item.id} className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
                     <KeyRound className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -128,11 +130,11 @@ export function ApiKeysPage() {
                     {item.enabled ? '停用' : '启用'}
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => handleRegenerate(item)}>
-                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                    <RefreshCw className="h-4 w-4" />
                     轮换
                   </Button>
                   <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(item)}>
-                    <Trash2 className="mr-2 h-3.5 w-3.5" />
+                    <Trash2 className="h-4 w-4" />
                     删除
                   </Button>
                 </div>

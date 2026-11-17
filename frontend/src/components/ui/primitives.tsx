@@ -25,7 +25,7 @@ export function Badge({
   return (
     <ShadcnBadge variant="outline"
       className={cn(
-        'inline-flex items-center gap-1 rounded-md border-transparent px-2 py-0.5 text-[11px] font-medium shadow-none',
+        'inline-flex items-center gap-1 rounded-md border-transparent px-2 py-0.5 text-xs font-medium shadow-none',
         tones[tone],
         className,
       )}
@@ -40,7 +40,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
       <select
         ref={ref}
         className={cn(
-          'h-10 w-full appearance-none rounded-md border border-input bg-card pl-3 pr-9 text-sm text-foreground shadow-sm transition-colors focus-ring disabled:cursor-not-allowed disabled:opacity-50 hover:border-primary/40',
+          'h-8 w-full appearance-none rounded-md border border-input bg-card pl-3 pr-8 text-sm text-foreground transition-colors focus-ring disabled:cursor-not-allowed disabled:opacity-50 hover:border-primary/40',
           className,
         )}
         {...props}

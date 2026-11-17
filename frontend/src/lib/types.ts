@@ -45,6 +45,7 @@ export interface AccountItem {
   password: string
   enabled: boolean
   is_pinned: boolean
+  show_in_station: boolean
   batch_code: string
   group_site_id: number | null
   group_site_code: string

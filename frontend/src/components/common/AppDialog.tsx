@@ -5,11 +5,12 @@ import { cn } from '@/lib/utils'
 const sizes = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-2xl', xl: 'max-w-4xl' }
 
 // Keep business dialogs concise while using shadcn/Radix for modal behavior.
-export function Dialog({ open, onClose, title, description, children, footer, size = 'md' }: {
+export function Dialog({ open, onClose, title, description, descriptionClassName, children, footer, size = 'md' }: {
   open: boolean
   onClose: () => void
   title?: ReactNode
   description?: ReactNode
+  descriptionClassName?: string
   children: ReactNode
   footer?: ReactNode
   size?: keyof typeof sizes
@@ -18,7 +19,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
   return (
     <DialogRoot open={open} onOpenChange={(value) => { if (!value) onClose() }}>
       <DialogContent
-        className={cn('flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-xl p-0', sizes[size])}
+        className={cn('flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-lg p-0', sizes[size])}
         {...(!description ? { 'aria-describedby': undefined } : {})}
         onOpenAutoFocus={() => {
           const active = document.activeElement as HTMLElement | null
@@ -32,12 +33,12 @@ export function Dialog({ open, onClose, title, description, children, footer, si
           previousFocus.current?.focus()
         }}
       >
-        <DialogHeader className="shrink-0 border-b px-6 py-5 pr-12 text-left">
+        <DialogHeader className="shrink-0 border-b px-6 py-4 pr-12 text-left">
           <DialogTitle>{title || '操作确认'}</DialogTitle>
-          {description ? <DialogDescription className="leading-relaxed">{description}</DialogDescription> : null}
+          {description ? <DialogDescription className={cn('leading-relaxed', descriptionClassName)}>{description}</DialogDescription> : null}
         </DialogHeader>
-        <div className="min-h-0 overflow-y-auto px-6 py-5">{children}</div>
-        {footer ? <DialogFooter className="shrink-0 flex-row flex-wrap gap-2 border-t bg-muted/50 px-6 py-4 sm:space-x-0">{footer}</DialogFooter> : null}
+        <div className="min-h-0 overflow-y-auto px-6 py-4">{children}</div>
+        {footer ? <DialogFooter className="shrink-0 flex-row flex-wrap gap-2 border-t bg-muted/50 px-6 py-3 sm:space-x-0">{footer}</DialogFooter> : null}
       </DialogContent>
     </DialogRoot>
   )

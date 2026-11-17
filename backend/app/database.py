@@ -44,6 +44,8 @@ def _ensure_outlook_account_columns() -> None:
         statements.append("ALTER TABLE outlook_accounts ADD COLUMN batch_code VARCHAR NOT NULL DEFAULT ''")
     if "group_site_id" not in columns:
         statements.append("ALTER TABLE outlook_accounts ADD COLUMN group_site_id INTEGER")
+    if "show_in_station" not in columns:
+        statements.append("ALTER TABLE outlook_accounts ADD COLUMN show_in_station BOOLEAN NOT NULL DEFAULT 1")
     added_group_site_column = "group_site_id" not in columns
     if "inbox_last_uid" not in columns:
         statements.append("ALTER TABLE outlook_accounts ADD COLUMN inbox_last_uid INTEGER")

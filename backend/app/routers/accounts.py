@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from math import ceil
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -46,6 +46,7 @@ from ..services.site_usage_service import (
     release_all_account_site_usages,
     release_site_usage,
 )
+from ..services.outlook_service import OutlookService
 
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -66,15 +67,18 @@ def _parse_import_line(raw_line: str) -> tuple[str, str, str, str] | None:
     if not line:
         return None
     if "----" in line:
-        parts = [item.strip() for item in re.split(r"-{4,}", line) if item.strip()]
+        parts = [item.strip() for item in re.split(r"-{4,}", line)]
     else:
         parts = [item.strip() for item in line.replace("\t", ",").split(",")]
-    parts = [item for item in parts if item]
-    if len(parts) == 2:
+    if len(parts) == 2 and all(parts):
         return parts[0], parts[1], "", ""
+    if len(parts) == 3 and all(parts):
+        return parts[0], "", parts[1], parts[2]
     if len(parts) < 4:
         return None
     email, password, client_id, refresh_token = parts[:4]
+    if not email or bool(client_id) != bool(refresh_token) or not (password or client_id):
+        return None
     return email, password, client_id, refresh_token
 
 
@@ -97,7 +101,8 @@ def _parse_import_records(data: str) -> list[tuple[int, tuple[str, str, str, str
         password = str(item.get("password") or "").strip()
         client_id = str(item.get("clientId") or item.get("client_id") or "").strip()
         refresh_token = str(item.get("refreshToken") or item.get("refresh_token") or "").strip()
-        result.append((index, (email, password, client_id, refresh_token) if email and password else None))
+        valid = email and (password or (client_id and refresh_token)) and bool(client_id) == bool(refresh_token)
+        result.append((index, (email, password, client_id, refresh_token) if valid else None))
     return result
 
 
@@ -167,7 +172,7 @@ def _derive_auth_fields(account: OutlookAccount) -> dict[str, bool | str]:
     else:
         auth_type = "none"
         permission_type = "未知"
-    token_status = "已配置" if has_oauth else "未配置"
+    token_status = "已配置（未验证）" if has_oauth else "未配置"
     return {
         "has_password": has_password,
         "has_oauth": has_oauth,
@@ -181,6 +186,7 @@ def _serialize_account(
     session: Session,
     account: OutlookAccount,
     site_map: dict[int, Site],
+    include_password: bool = False,
 ) -> AccountListItem:
     """AI by zb: 统一序列化邮箱列表项。"""
     active_usages = get_active_account_site_usages(session, account.id or 0)
@@ -190,8 +196,9 @@ def _serialize_account(
     return AccountListItem(
         id=account.id or 0,
         email=account.email,
-        password=account.password,
+        password=account.password if include_password else "",
         enabled=account.enabled,
+        show_in_station=account.show_in_station,
         is_pinned=account.is_pinned,
         batch_code=account.batch_code,
         group_site_id=account.group_site_id,
@@ -248,10 +255,17 @@ def _collect_visible_accounts(
     batch_code: str,
     site_code: str,
     group_site_id: int | None = None,
+    include_disabled: bool = False,
+    station_only: bool = False,
+    include_password: bool = False,
 ) -> list[AccountListItem]:
     """AI by zb: 按范围和批次筛选可见邮箱列表。"""
     site_map = load_site_map(session)
-    stmt = select(OutlookAccount).where(OutlookAccount.enabled == True)
+    stmt = select(OutlookAccount)
+    if not include_disabled:
+        stmt = stmt.where(OutlookAccount.enabled == True)
+    if station_only:
+        stmt = stmt.where(OutlookAccount.show_in_station == True)
     current_site = get_site_by_code(session, site_code, enabled_only=True) if site_code.strip() else None
 
     normalized_scope = scope if scope in {"consumed", "pool", "all"} else "consumed"
@@ -266,7 +280,7 @@ def _collect_visible_accounts(
 
     items: list[AccountListItem] = []
     for account in list(session.exec(stmt).all()):
-        serialized = _serialize_account(session, account, site_map)
+        serialized = _serialize_account(session, account, site_map, include_password=include_password)
         consumed_for_site = any(site.site_code == current_site.code for site in serialized.active_sites) if current_site else serialized.is_consumed
         if normalized_scope == "consumed" and not consumed_for_site:
             continue
@@ -323,14 +337,11 @@ def import_accounts(
         existing = session.exec(select(OutlookAccount).where(OutlookAccount.email == email)).first()
         now = utcnow()
         if existing:
-            if not request.enabled:
-                release_all_account_site_usages(session, existing.id or 0)
-            existing.password = password
-            existing.client_id = client_id
-            existing.refresh_token = refresh_token
-            existing.enabled = request.enabled
-            existing.batch_code = request.batch_code
-            existing.group_site_id = group_site.id if group_site else None
+            if password:
+                existing.password = password
+            if client_id and refresh_token:
+                existing.client_id = client_id
+                existing.refresh_token = refresh_token
             existing.updated_at = now
             session.add(existing)
             updated += 1
@@ -374,10 +385,12 @@ def list_accounts(
     batch_code: str = Query(default=""),
     site_code: str = Query(default=""),
     group_site_id: int | None = Query(default=None),
+    include_disabled: bool = Query(default=False),
+    station_only: bool = Query(default=False),
 ):
     """AI by zb: 返回池内或已使用邮箱列表。"""
     require_admin_authorization(authorization)
-    visible_items = _collect_visible_accounts(session, keyword, scope, batch_code, site_code, group_site_id)
+    visible_items = _collect_visible_accounts(session, keyword, scope, batch_code, site_code, group_site_id, include_disabled, station_only)
     total = len(visible_items)
     total_pages = max(1, ceil(total / page_size)) if total else 1
     start = (page - 1) * page_size
@@ -396,7 +409,7 @@ def export_accounts(
 ):
     """AI by zb: 导出指定范围内的邮箱 CSV。"""
     require_admin_authorization(authorization)
-    visible_items = _collect_visible_accounts(session, keyword, scope, batch_code, site_code)
+    visible_items = _collect_visible_accounts(session, keyword, scope, batch_code, site_code, include_password=True)
     csv_content = _build_export_csv(visible_items)
     filename_parts = ["accounts"]
     filename_parts.append(scope if scope in {"consumed", "pool", "all"} else "all")
@@ -417,7 +430,7 @@ def export_accounts_txt(
 ):
     """Export all visible accounts matching the mailbox management filters."""
     require_admin_authorization(authorization)
-    items = _collect_visible_accounts(session, keyword, scope, "", "", group_site_id)
+    items = _collect_visible_accounts(session, keyword, scope, "", "", group_site_id, include_disabled=True, include_password=True)
     content = "\n".join(f"{item.email}----{item.password}" for item in items)
     headers = {"Content-Disposition": f'attachment; filename="accounts-{len(items)}.txt"', "Cache-Control": "no-store"}
     return StreamingResponse(iter([content.encode("utf-8")]), media_type="text/plain; charset=utf-8", headers=headers)
@@ -431,7 +444,7 @@ def batch_update_accounts(
 ):
     """AI by zb: 批量修改邮箱分组或启停状态。"""
     require_admin_authorization(authorization)
-    if request.batch_code is None and request.enabled is None and "group_site_id" not in request.model_fields_set:
+    if request.batch_code is None and request.enabled is None and request.show_in_station is None and "group_site_id" not in request.model_fields_set:
         raise HTTPException(status_code=400, detail="请指定要修改的字段")
 
     accounts = session.exec(select(OutlookAccount).where(OutlookAccount.id.in_(request.account_ids))).all()
@@ -441,6 +454,8 @@ def batch_update_accounts(
     group_site = _resolve_group_site(session, request.group_site_id) if "group_site_id" in request.model_fields_set else None
     now = utcnow()
     for account in accounts:
+        if request.show_in_station is not None:
+            account.show_in_station = request.show_in_station
         if request.batch_code is not None:
             account.batch_code = request.batch_code.strip()
         if "group_site_id" in request.model_fields_set:
@@ -455,6 +470,23 @@ def batch_update_accounts(
         session.add(account)
     session.commit()
     return OperationStatusResponse(ok=True, email="", message=f"已更新 {len(accounts)} 个邮箱")
+
+
+@router.post("/credentials")
+def get_account_credentials(
+    request: BatchDeleteAccountsRequest,
+    authorization: str | None = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    """Return passwords only for an explicit administrator action."""
+    require_admin_authorization(authorization)
+    accounts = session.exec(select(OutlookAccount).where(OutlookAccount.id.in_(request.account_ids))).all()
+    if len(accounts) != len(set(request.account_ids)):
+        raise HTTPException(status_code=404, detail="部分邮箱不存在")
+    return JSONResponse(
+        content=[{"id": account.id, "password": account.password} for account in accounts],
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.post("/batch-delete", response_model=OperationStatusResponse)
@@ -577,6 +609,9 @@ def update_account(
     if request.note is not None:
         account.note = request.note.strip()
 
+    if request.show_in_station is not None:
+        account.show_in_station = request.show_in_station
+
     if request.enabled is not None:
         account.enabled = request.enabled
         if not request.enabled:
@@ -599,6 +634,29 @@ def update_account(
     session.commit()
     session.refresh(account)
     return _serialize_detail(session, account, site_map)
+
+
+@router.post("/{account_id}/validate-oauth", response_model=OperationStatusResponse)
+def validate_account_oauth(
+    account_id: int,
+    authorization: str | None = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    """Verify OAuth and IMAP without downloading any messages."""
+    require_admin_authorization(authorization)
+    account = _get_account_or_404(session, account_id)
+    service = OutlookService(account)
+    try:
+        connection = service._open_imap_connection()
+        service._safe_logout(connection)
+        token = service.refresh_token_for_storage()
+        if token and token != account.refresh_token:
+            account.refresh_token = token
+            session.add(account)
+            session.commit()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return OperationStatusResponse(ok=True, email=account.email, message="OAuth 和 IMAP 连接验证成功")
 
 
 @router.post("/{account_id}/consume", response_model=OperationStatusResponse)

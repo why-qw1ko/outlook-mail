@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
-  BadgeCheck,
   Building2,
   Copy,
   ExternalLink,
-  Import,
   Loader2,
   Mail,
   MailPlus,
@@ -15,18 +13,15 @@ import {
   RefreshCw,
   Search,
   Send,
-  Trash2,
 } from 'lucide-react'
 import {
   consumeAccount,
-  deleteAccount,
   fetchAccountDetail,
   fetchAccounts,
   fetchMessageDetail,
   fetchMessages,
   fetchPoolSummary,
   fetchSites,
-  importAccounts,
   releaseAccount,
   sendMail,
   syncAccount,
@@ -43,7 +38,6 @@ import type {
   SiteItem,
 } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { MailIllustration } from '@/components/common/MailIllustration'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { MailHtmlFrame } from '@/components/common/MailHtmlFrame'
 import { Button } from '@/components/ui/button'
@@ -82,7 +76,6 @@ export function StationPage() {
   const [syncingId, setSyncingId] = useState<number | null>(null)
   const [actionBusy, setActionBusy] = useState<string | null>(null)
 
-  const [importOpen, setImportOpen] = useState(false)
   const [composeOpen, setComposeOpen] = useState(false)
   const [siteActionOpen, setSiteActionOpen] = useState<'consume' | 'release' | null>(null)
 
@@ -96,6 +89,7 @@ export function StationPage() {
         scope,
         batchCode,
         siteCode,
+        stationOnly: true,
       })
       setAccounts(result.items)
       setTotal(result.total)
@@ -212,13 +206,6 @@ export function StationPage() {
     }
   }, [selected, toast])
 
-  const filteredLabel = useMemo(() => {
-    if (keyword) return `匹配「${keyword}」`
-    if (scope === 'pool') return '未占用'
-    if (scope === 'consumed') return '使用中'
-    return '全部邮箱'
-  }, [keyword, scope])
-
   return (
     <div className="page-layout">
       {/* Top toolbar */}
@@ -227,7 +214,7 @@ export function StationPage() {
           <h1 className="text-headline text-lg leading-tight">邮箱站</h1>
           <p className="text-paragraph text-xs">
             共 {total} 个邮箱
-            {pool ? ` · 池内 ${pool.pool_count} · 使用中 ${pool.consumed_count}` : ''}
+            {pool ? ` · 业务池内 ${pool.pool_count} · 业务使用中 ${pool.consumed_count}` : ''}
           </p>
         </div>
 
@@ -235,8 +222,8 @@ export function StationPage() {
           <div className="relative w-full sm:w-[220px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="h-9 pl-9"
-              placeholder="搜索邮箱 / 备注 / 批次"
+              className="pl-9"
+              placeholder="搜索邮箱"
               value={keyword}
               onChange={(e) => {
                 const value = e.target.value
@@ -249,10 +236,6 @@ export function StationPage() {
               }}
             />
           </div>
-          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-            <Import className="h-4 w-4" />
-            导入
-          </Button>
           <Button size="sm" onClick={() => setComposeOpen(true)} disabled={!selected}>
             <MailPlus className="h-4 w-4" />
             写信
@@ -269,7 +252,7 @@ export function StationPage() {
         {/* Account list */}
         <section className={cn('min-h-0 w-full shrink-0 flex-col border-r border-border bg-card xl:flex xl:w-[260px] 2xl:w-[290px]', mobilePane === 'accounts' ? 'flex' : 'hidden')}>
           <div className="space-y-2 border-b border-border/70 px-3 py-3">
-            <div className="grid grid-cols-3 gap-1 rounded-xl bg-accent/60 p-1">
+            <div className="grid grid-cols-3 gap-1 rounded-md bg-accent/60 p-1">
               {(
                 [
                   { value: 'all', label: '全部' },
@@ -285,9 +268,9 @@ export function StationPage() {
                     setPage(1)
                   }}
                   className={cn(
-                    'rounded-lg px-2 py-1.5 text-xs font-medium transition-colors',
+                    'focus-ring rounded-sm px-2 py-1 text-xs font-medium transition-colors',
                     scope === item.value
-                      ? 'bg-card text-foreground shadow-soft'
+                      ? 'bg-card text-foreground'
                       : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
@@ -330,7 +313,7 @@ export function StationPage() {
               keyword ? (
                 <SearchEmpty keyword={keyword} />
               ) : (
-                <EmptyState title="暂无邮箱" description="点击右上角「导入」批量添加 Outlook 账号" />
+                <EmptyState title="暂无邮箱" description="请在邮箱管理中导入邮箱并打开邮箱站开关" />
               )
             ) : (
               <div className="space-y-1.5">
@@ -350,9 +333,9 @@ export function StationPage() {
                         }
                       }}
                       className={cn(
-                        'w-full cursor-pointer rounded-xl border px-3 py-3 text-left transition-all',
+                        'focus-ring w-full cursor-pointer rounded-md border px-3 py-3 text-left transition-colors',
                         active
-                          ? 'border-primary/40 bg-primary/10 shadow-soft'
+                          ? 'border-primary/40 bg-primary/10'
                           : 'border-transparent bg-card hover:border-border hover:bg-accent/40',
                       )}
                     >
@@ -360,7 +343,7 @@ export function StationPage() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             {account.is_pinned ? <Pin className="h-3 w-3 shrink-0 text-primary" /> : null}
-                            <p className="truncate text-[13px] font-medium text-foreground">
+                            <p className="truncate text-sm font-medium text-foreground">
                               {account.email}
                             </p>
                           </div>
@@ -437,7 +420,7 @@ export function StationPage() {
             <EmptyState
               icon={<Mail className="h-6 w-6" />}
               title="选择一个邮箱"
-              description={`左侧为邮箱池（${filteredLabel}）。选中后可查看邮件、手动获取新邮件并执行占用管理。`}
+              description="选择邮箱后查看邮件"
             />
           ) : (
             <>
@@ -461,7 +444,7 @@ export function StationPage() {
                     />
                   </Button>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-1 rounded-xl bg-accent/60 p-1">
+                <div className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-accent/60 p-1">
                   {(
                     [
                       { value: 'inbox', label: `收件箱 (${selected.inbox_count})` },
@@ -474,7 +457,7 @@ export function StationPage() {
                       className={cn(
                         'rounded-lg px-2 py-1.5 text-xs font-medium transition-colors',
                         folder === item.value
-                          ? 'bg-card text-foreground shadow-soft'
+                          ? 'bg-card text-foreground'
                           : 'text-muted-foreground hover:text-foreground',
                       )}
                       onClick={() => {
@@ -543,12 +526,9 @@ export function StationPage() {
           {!selected ? (
             <div className="flex flex-1 items-center justify-center px-8">
               <div className="max-w-md text-center">
-                <MailIllustration className="mx-auto mb-6 w-60 max-w-full" />
-                <h2 className="text-headline text-xl">Outlook 邮件工作台</h2>
-                <p className="text-paragraph mt-3 text-sm leading-relaxed">
-                  左侧选择邮箱后，在此查看邮件正文、执行获取邮件、站点占用与写信。
-                  邮件获取为手动操作，不会倒计时自动刷新。
-                </p>
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-secondary"><Mail className="h-5 w-5" /></div>
+                <h2 className="text-headline text-sm">邮件详情</h2>
+                <p className="mt-1 text-xs text-muted-foreground">选择邮件后查看</p>
               </div>
             </div>
           ) : (
@@ -603,12 +583,6 @@ export function StationPage() {
                   }}
                   onConsume={() => setSiteActionOpen('consume')}
                   onRelease={() => setSiteActionOpen('release')}
-                  onDelete={async () => {
-                    setSelected(null)
-                    setMessages([])
-                    setSelectedMessage(null)
-                    await loadAccounts()
-                  }}
                 />
               </div>
 
@@ -625,15 +599,6 @@ export function StationPage() {
           )}
         </section>
       </div>
-
-      <ImportDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onDone={async () => {
-          setImportOpen(false)
-          await Promise.all([loadAccounts(), loadMeta()])
-        }}
-      />
 
       <ComposeDialog
         open={composeOpen}
@@ -671,7 +636,6 @@ function AccountActions({
   onRefresh,
   onConsume,
   onRelease,
-  onDelete,
 }: {
   account: AccountDetail
   busy: string | null
@@ -679,7 +643,6 @@ function AccountActions({
   onRefresh: () => Promise<void>
   onConsume: () => void
   onRelease: () => void
-  onDelete: () => Promise<void>
 }) {
   const toast = useToast()
 
@@ -696,33 +659,6 @@ function AccountActions({
     }
   }
 
-  const toggleEnabled = async () => {
-    onBusy('enabled')
-    try {
-      await updateAccount(account.id, { enabled: !account.enabled })
-      await onRefresh()
-      toast.success(account.enabled ? '已停用邮箱' : '已启用邮箱')
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '操作失败')
-    } finally {
-      onBusy(null)
-    }
-  }
-
-  const remove = async () => {
-    if (!window.confirm(`确认硬删除邮箱 ${account.email}？邮件缓存与站点占用会一并清理，且不可恢复。`)) return
-    onBusy('delete')
-    try {
-      await deleteAccount(account.id)
-      toast.success('邮箱已删除')
-      await onDelete()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '删除失败')
-    } finally {
-      onBusy(null)
-    }
-  }
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -733,12 +669,10 @@ function AccountActions({
       <DropdownMenuContent align="end" className="w-48">
         {[
           { label: account.is_pinned ? '取消置顶' : '置顶邮箱', icon: account.is_pinned ? PinOff : Pin, onClick: togglePin },
-          { label: account.enabled ? '停用邮箱' : '启用邮箱', icon: BadgeCheck, onClick: toggleEnabled },
           { label: '占用到站点', icon: Building2, onClick: onConsume },
           { label: '释放站点占用', icon: ExternalLink, onClick: onRelease },
-          { label: '删除邮箱', icon: Trash2, onClick: remove, danger: true },
         ].map((item) => (
-          <DropdownMenuItem key={item.label} className={cn('gap-2 py-2.5', item.danger && 'text-destructive focus:text-destructive')} onSelect={() => { void item.onClick() }}>
+          <DropdownMenuItem key={item.label} className="gap-2 py-2.5" onSelect={() => { void item.onClick() }}>
             <item.icon className="h-4 w-4" />{item.label}
           </DropdownMenuItem>
         ))}
@@ -752,7 +686,7 @@ function AccountOverview({ account }: { account: AccountDetail }) {
     <div className="space-y-4 p-6">
       <div className="surface p-5">
         <div className="flex flex-wrap items-start gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
             <Mail className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -776,11 +710,11 @@ function AccountOverview({ account }: { account: AccountDetail }) {
         <div className="surface p-5">
           <p className="text-paragraph text-xs">邮件缓存</p>
           <div className="mt-3 grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-accent/70 px-3 py-3">
+            <div className="rounded-md bg-accent/70 px-3 py-3">
               <p className="text-paragraph text-xs">收件箱</p>
               <p className="text-headline mt-1 text-2xl">{account.inbox_count}</p>
             </div>
-            <div className="rounded-xl bg-accent/70 px-3 py-3">
+            <div className="rounded-md bg-accent/70 px-3 py-3">
               <p className="text-paragraph text-xs">已发送</p>
               <p className="text-headline mt-1 text-2xl">{account.sent_count}</p>
             </div>
@@ -804,7 +738,7 @@ function AccountOverview({ account }: { account: AccountDetail }) {
               {account.active_sites.map((site) => (
                 <div
                   key={site.id}
-                  className="flex items-center justify-between rounded-xl border border-border/70 px-3 py-2.5"
+                  className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2"
                 >
                   <div>
                     <p className="text-sm font-medium text-foreground">{site.site_code}</p>
@@ -815,9 +749,6 @@ function AccountOverview({ account }: { account: AccountDetail }) {
               ))}
             </div>
           )}
-          <p className="text-paragraph mt-4 text-xs leading-relaxed">
-            说明：点击邮箱卡片右上角刷新按钮获取新邮件，系统不会倒计时自动拉取。
-          </p>
         </div>
       </div>
     </div>
@@ -839,7 +770,7 @@ function MessageBody({ message }: { message: MessageDetail }) {
               onClick={() => setMode('html')}
               className={cn(
                 'rounded-lg px-3 py-1.5 text-xs font-medium',
-                mode === 'html' ? 'bg-card text-foreground shadow-soft' : 'text-muted-foreground',
+                mode === 'html' ? 'bg-card text-foreground' : 'text-muted-foreground',
               )}
             >
               原文
@@ -849,7 +780,7 @@ function MessageBody({ message }: { message: MessageDetail }) {
               onClick={() => setMode('text')}
               className={cn(
                 'rounded-lg px-3 py-1.5 text-xs font-medium',
-                mode === 'text' ? 'bg-card text-foreground shadow-soft' : 'text-muted-foreground',
+                mode === 'text' ? 'bg-card text-foreground' : 'text-muted-foreground',
               )}
             >
               纯文本
@@ -867,93 +798,6 @@ function MessageBody({ message }: { message: MessageDetail }) {
         </div>
       </div>
     </div>
-  )
-}
-
-function ImportDialog({
-  open,
-  onClose,
-  onDone,
-}: {
-  open: boolean
-  onClose: () => void
-  onDone: () => Promise<void>
-}) {
-  const toast = useToast()
-  const [data, setData] = useState('')
-  const [batchCode, setBatchCode] = useState('')
-  const [enabled, setEnabled] = useState(true)
-  const [loading, setLoading] = useState(false)
-
-  const submit = async () => {
-    if (!data.trim()) {
-      toast.error('请粘贴要导入的账号数据')
-      return
-    }
-    setLoading(true)
-    try {
-      const result = await importAccounts({
-        data,
-        enabled,
-        batch_code: batchCode.trim(),
-      })
-      toast.success(
-        `导入完成：新增 ${result.created}，更新 ${result.updated}，失败 ${result.failed}`,
-      )
-      if (result.errors.length) {
-        toast.error(result.errors.slice(0, 3).join('；'))
-      }
-      setData('')
-      await onDone()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '导入失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title="导入邮箱"
-      description="支持 email----password 或 email----password----client_id----refresh_token，每行一条。"
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>
-            取消
-          </Button>
-          <Button onClick={() => void submit()} loading={loading}>
-            开始导入
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="stationpage-field-1">账号数据</Label>
-          <Textarea id="stationpage-field-1"
-            rows={10}
-            placeholder={'demo@outlook.com----password\ndemo2@outlook.com----password----client_id----refresh_token'}
-            value={data}
-            onChange={(e) => setData(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="stationpage-field-2">批次代码（可选）</Label>
-          <Input id="stationpage-field-2" value={batchCode} onChange={(e) => setBatchCode(e.target.value)} placeholder="batch-20260405" />
-        </div>
-        <label className="flex items-center gap-2 text-sm text-foreground">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-            className="h-4 w-4 rounded border-border text-primary"
-          />
-          导入后立即启用
-        </label>
-      </div>
-    </Dialog>
   )
 }
 

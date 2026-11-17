@@ -30,39 +30,34 @@ export function AppShell({ user, children }: { user: UserIdentity | null; childr
 
   const navigation = (
     <>
-      <div className="flex items-center gap-3 px-5 py-7">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-          <Inbox className="h-5 w-5" />
+      <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <Inbox className="h-4 w-4" />
         </div>
         <div>
-          <p className="text-headline text-base">Mail Station<span className="text-primary">.</span></p>
-          <p className="mt-0.5 text-[11px] tracking-wide text-muted-foreground">OUTLOOK 工作空间</p>
+          <p className="text-headline text-sm">Mail Station</p>
+          <p className="text-xs text-muted-foreground">Outlook 邮箱管理</p>
         </div>
       </div>
-      <div className="px-6 pb-3 pt-3 text-[10px] font-semibold tracking-[0.18em] text-muted-foreground">工作台 / WORKSPACE</div>
+      <div className="px-5 pb-2 pt-5 text-xs text-muted-foreground">管理</div>
       <nav aria-label="主导航" className="flex-1 space-y-1 px-3">
         {navItems.map((item) => (
           <NavLink key={item.to} to={item.to} end={item.end} onClick={() => setMobileOpen(false)}
-            className={({ isActive }) => cn('group flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors focus-ring', isActive ? 'bg-sidebar-accent text-foreground' : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground')}>
+            className={({ isActive }) => cn('group flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors focus-ring', isActive ? 'bg-sidebar-accent text-foreground' : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground')}>
             {({ isActive }) => <>
-              <item.icon className={cn('h-[18px] w-[18px]', isActive && 'text-secondary')} />
+              <item.icon className={cn('h-4 w-4', isActive && 'text-secondary')} />
               {item.label}
               {isActive ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" /> : null}
             </>}
           </NavLink>
         ))}
       </nav>
-      <div className="m-4 rounded-xl border border-secondary/10 bg-secondary/5 p-4">
-        <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-tertiary text-tertiary-foreground"><Mail className="h-4 w-4" /></div>
-        <p className="text-sm font-medium">让邮件井然有序</p>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">账号、站点与邮件，集中管理。</p>
-      </div>
       <Separator />
       <div className="flex items-center gap-3 p-4">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">{(user?.username || 'A').slice(0, 1).toUpperCase()}</div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{user?.username ?? 'admin'}</p>
-          <p className="text-[11px] text-muted-foreground">{user?.role === 'user' ? '用户' : '管理员'}</p>
+          <p className="text-xs text-muted-foreground">{user?.role === 'user' ? '用户' : '管理员'}</p>
         </div>
         <Button variant="ghost" size="icon-sm" onClick={logout} aria-label="退出登录" title="退出登录"><LogOut className="h-4 w-4" /></Button>
       </div>
@@ -81,13 +76,12 @@ export function AppShell({ user, children }: { user: UserIdentity | null; childr
         </DialogContent>
       </Dialog>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4 sm:px-7">
+        <div className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4 sm:px-6">
           <Button ref={menuButton} variant="ghost" size="icon-sm" className="lg:hidden" onClick={() => setMobileOpen(true)} aria-label="打开导航菜单"><Menu className="h-5 w-5" /></Button>
-          <span className="hidden text-xs text-muted-foreground sm:inline">工作空间</span>
+          <span className="hidden text-xs text-muted-foreground sm:inline">管理</span>
           <ChevronRight className="hidden h-3 w-3 text-muted-foreground sm:block" />
           <span className="text-xs font-medium">{currentPage?.label ?? 'Mail Station'}</span>
           <div className="ml-auto flex items-center gap-3">
-            <span className="hidden text-[11px] text-muted-foreground sm:inline">OUTLOOK MAIL STATION</span>
             <ThemeToggle />
           </div>
         </div>

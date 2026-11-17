@@ -38,7 +38,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (kind: ToastKind, message: string) => {
       const id = nextId++
       setItems((current) => [...current, { id, kind, message }])
-      window.setTimeout(() => dismiss(id), 3600)
+      const duration = kind === 'error' ? Math.min(18000, Math.max(8000, message.length * 100)) : 3600
+      window.setTimeout(() => dismiss(id), duration)
     },
     [dismiss],
   )
@@ -55,21 +56,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div role="status" aria-live="polite" aria-atomic="false" className="pointer-events-none fixed bottom-5 right-5 z-[80] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
+      <div className="pointer-events-none fixed right-4 top-4 z-[80] flex w-[min(400px,calc(100vw-2rem))] flex-col gap-2">
         {items.map((item) => (
           <div
             key={item.id}
+            role={item.kind === 'error' ? 'alert' : 'status'}
             className={cn(
-              'pointer-events-auto flex items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-float animate-slide-up',
+              'pointer-events-auto flex max-h-[40dvh] items-start gap-3 overflow-y-auto rounded-lg border border-border bg-card px-4 py-3 shadow-panel animate-fade-in',
             )}
           >
             {item.kind === 'success' && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />}
             {item.kind === 'error' && <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />}
             {item.kind === 'info' && <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
-            <p className="flex-1 text-sm leading-relaxed text-foreground">{item.message}</p>
+            <p className="min-w-0 flex-1 break-words text-sm leading-5 text-foreground">{item.message}</p>
             <button
               type="button"
-              className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="focus-ring rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => dismiss(item.id)}
               aria-label="关闭提示"
             >

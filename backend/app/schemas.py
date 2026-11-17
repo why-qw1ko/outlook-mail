@@ -157,6 +157,7 @@ class AccountListItem(BaseModel):
     email: str
     password: str = ""
     enabled: bool
+    show_in_station: bool = False
     is_pinned: bool = False
     batch_code: str = ""
     group_site_id: Optional[int] = None
@@ -205,6 +206,7 @@ class UpdateAccountRequest(BaseModel):
     """AI by zb: 定义账号启停、备注、分组修改的请求体。"""
 
     enabled: Optional[bool] = None
+    show_in_station: Optional[bool] = None
     note: Optional[str] = None
     is_pinned: Optional[bool] = None
     batch_code: Optional[str] = None
@@ -218,6 +220,7 @@ class BatchUpdateAccountsRequest(BaseModel):
     batch_code: Optional[str] = None
     group_site_id: Optional[int] = None
     enabled: Optional[bool] = None
+    show_in_station: Optional[bool] = None
 
 
 class BatchDeleteAccountsRequest(BaseModel):

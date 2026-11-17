@@ -125,6 +125,8 @@ export function fetchAccounts(params: {
   batchCode?: string
   groupSiteId?: number | null
   siteCode?: string
+  includeDisabled?: boolean
+  stationOnly?: boolean
 }) {
   const search = new URLSearchParams()
   search.set('page', String(params.page))
@@ -134,6 +136,8 @@ export function fetchAccounts(params: {
   search.set('batch_code', params.batchCode || '')
   if (params.groupSiteId) search.set('group_site_id', String(params.groupSiteId))
   search.set('site_code', params.siteCode || '')
+  if (params.includeDisabled) search.set('include_disabled', 'true')
+  if (params.stationOnly) search.set('station_only', 'true')
   return apiFetch<AccountListResponse>(`/api/accounts?${search.toString()}`)
 }
 
@@ -188,6 +192,7 @@ export function updateAccount(
   accountId: number,
   payload: {
     enabled?: boolean
+    show_in_station?: boolean
     note?: string
     is_pinned?: boolean
     batch_code?: string
@@ -200,11 +205,20 @@ export function updateAccount(
   })
 }
 
+export function fetchAccountCredentials(accountIds: number[]) {
+  return apiFetch<Array<{ id: number; password: string }>>('/api/accounts/credentials', {
+    method: 'POST',
+    body: JSON.stringify({ account_ids: accountIds }),
+    cache: 'no-store',
+  })
+}
+
 export function batchUpdateAccounts(payload: {
   account_ids: number[]
   batch_code?: string
   group_site_id?: number | null
   enabled?: boolean
+  show_in_station?: boolean
 }) {
   return apiFetch<OperationStatusPayload>('/api/accounts/batch-update', {
     method: 'POST',
@@ -272,6 +286,10 @@ export function syncAccount(accountId: number) {
   return apiFetch<SyncResponse>(`/api/accounts/${accountId}/sync`, {
     method: 'POST',
   })
+}
+
+export function validateAccountOAuth(accountId: number) {
+  return apiFetch<OperationStatusPayload>(`/api/accounts/${accountId}/validate-oauth`, { method: 'POST' })
 }
 
 export function fetchMessages(accountId: number, folder: MessageFolder) {

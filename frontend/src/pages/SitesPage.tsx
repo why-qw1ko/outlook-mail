@@ -8,11 +8,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge, Label } from '@/components/ui/primitives'
 import { Dialog } from '@/components/common/AppDialog'
+import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useToast } from '@/components/ui/toast'
 import { EmptyState, LoadingState } from '@/components/common/states'
 
 export function SitesPage() {
   const toast = useToast()
+  const confirm = useConfirm()
   const [sites, setSites] = useState<SiteItem[]>([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
@@ -40,7 +42,7 @@ export function SitesPage() {
         <div>
           <h1 className="text-headline text-lg leading-tight">站点管理</h1>
           <p className="text-paragraph text-xs">
-            站点是业务方的领取单位（如 GPT、OpenAI）；分组只是邮箱归类标签。占用/释放按站点记录
+            邮箱按站点领取和释放；分组仅用于筛选。
           </p>
         </div>
         <div className="ml-auto">
@@ -52,9 +54,8 @@ export function SitesPage() {
       </header>
 
       <div className="page-content">
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary/10 text-secondary"><Settings2 className="h-5 w-5" /></div>
-          <div><h2 className="text-sm font-semibold">全部站点</h2><p className="mt-0.5 text-xs text-muted-foreground">管理业务接入与邮箱占用</p></div>
+        <div className="mb-4 flex items-center gap-3">
+          <h2 className="text-sm font-semibold">全部站点</h2>
           <Badge tone="secondary" className="ml-auto">{loading ? '加载中…' : sites.length + ' 个站点'}</Badge>
         </div>
         {loading ? (
@@ -63,12 +64,12 @@ export function SitesPage() {
           <EmptyState
             icon={<Settings2 className="h-6 w-6" />}
             title="暂无站点"
-            description="创建站点后，业务系统可按 site_code 领取和释放邮箱"
+            description="创建站点后，业务系统可领取邮箱"
           />
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {sites.map((site) => (
-              <Card key={site.id} className="animate-fade-in p-5 shadow-soft">
+              <Card key={site.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-headline break-all text-base">{site.code}</p>
@@ -81,20 +82,18 @@ export function SitesPage() {
                 <p className="text-paragraph mt-4 text-xs">
                   更新于 {formatTime(site.updated_at)}
                 </p>
-                <div className="mt-4 space-y-2">
+                <div className="mt-4 flex flex-wrap gap-2 border-t pt-3">
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="w-full justify-start"
                     onClick={() => setEditingSite(site)}
                   >
                     <Pencil className="h-4 w-4" />
-                    编辑站点
+                    编辑
                   </Button>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="w-full justify-start"
                     onClick={async () => {
                       try {
                         await updateSite(site.id, { enabled: !site.enabled })
@@ -106,14 +105,14 @@ export function SitesPage() {
                     }}
                   >
                     {site.enabled ? <ToggleLeft className="h-4 w-4" /> : <ToggleRight className="h-4 w-4" />}
-                    {site.enabled ? '停用站点' : '启用站点'}
+                    {site.enabled ? '停用' : '启用'}
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="w-full justify-start text-destructive"
+                    className="text-destructive"
                     onClick={async () => {
-                      if (!window.confirm(`确认删除站点 ${site.code}？未释放占用时会删除失败。`)) return
+                      if (!(await confirm({ title: '删除站点', description: `确认删除 ${site.code}？存在未释放的占用时无法删除。`, confirmText: '删除', destructive: true }))) return
                       try {
                         await deleteSite(site.id)
                         toast.success('站点已删除')
@@ -124,7 +123,7 @@ export function SitesPage() {
                     }}
                   >
                     <Trash2 className="h-4 w-4" />
-                    删除站点
+                    删除
                   </Button>
                 </div>
               </Card>

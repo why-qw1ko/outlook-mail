@@ -202,19 +202,6 @@ class OutlookService:
                     oauth_error = exc
                     errors.append(f"{host} OAuth: {exc}")
 
-            if self.password:
-                try:
-                    with smtplib.SMTP(host, 587, timeout=30) as smtp:
-                        smtp.ehlo()
-                        smtp.starttls()
-                        smtp.ehlo()
-                        smtp.login(self.email, self.password)
-                        smtp.send_message(message, to_addrs=recipients)
-                        return
-                except Exception as exc:
-                    errors.append(f"{host} Password: {exc}")
-                    continue
-
             if oauth_error is not None:
                 continue
 
@@ -233,24 +220,21 @@ class OutlookService:
         token_result = self._get_imap_token_result()
         last_error: Exception | None = None
         for host in IMAP_HOSTS:
+            imap_conn: imaplib.IMAP4_SSL | None = None
             try:
                 imap_conn = imaplib.IMAP4_SSL(host, 993, timeout=30)
-                if token_result:
-                    self._imap_auth_oauth(imap_conn, token_result.access_token)
-                elif self.password:
-                    imap_conn.login(self.email, self.password)
-                else:
-                    raise RuntimeError("当前账号缺少可用的 IMAP 认证方式")
+                self._imap_auth_oauth(imap_conn, token_result.access_token)
                 return imap_conn
             except Exception as exc:
                 last_error = exc
                 try:
-                    imap_conn.logout()
+                    if imap_conn is not None:
+                        imap_conn.logout()
                 except Exception:
                     pass
         raise RuntimeError(f"Outlook IMAP 登录失败: {last_error}")
 
-    def _get_imap_token_result(self) -> Optional[TokenResult]:
+    def _get_imap_token_result(self) -> TokenResult:
         """AI by zb: 复用当前服务实例内已经刷新出的 IMAP 令牌。"""
         if self._imap_token_result is not None:
             return self._imap_token_result
@@ -259,11 +243,13 @@ class OutlookService:
             self.refresh_token = self._imap_token_result.refresh_token
         return self._imap_token_result
 
-    def _refresh_access_token(self, scope: str) -> Optional[TokenResult]:
+    def _refresh_access_token(self, scope: str) -> TokenResult:
         """AI by zb: 使用 refresh_token 获取可用于 IMAP 或 SMTP 的访问令牌。"""
         if not self.client_id or not self.refresh_token:
-            return None
+            raise RuntimeError("缺少 OAuth 凭据：请在邮箱管理中导入 client_id 和 refresh_token；Outlook 不再支持密码基本认证")
 
+        error_codes: set[str] = set()
+        network_error = False
         for endpoint in MICROSOFT_TOKEN_ENDPOINTS:
             try:
                 with httpx.Client(timeout=20) as client:
@@ -277,15 +263,28 @@ class OutlookService:
                         },
                     )
                 if response.status_code >= 400:
+                    try:
+                        code = response.json().get("error", "")
+                        if code in {"invalid_grant", "invalid_client", "invalid_scope", "unauthorized_client", "consent_required", "interaction_required"}:
+                            error_codes.add(code)
+                    except (ValueError, AttributeError):
+                        pass
                     continue
                 payload = response.json() if response.content else {}
+                if not isinstance(payload, dict):
+                    continue
                 access_token = str(payload.get("access_token") or "").strip()
                 if access_token:
                     next_refresh = str(payload.get("refresh_token") or "").strip() or self.refresh_token
                     return TokenResult(access_token=access_token, refresh_token=next_refresh)
-            except Exception:
+            except (httpx.HTTPError, ValueError):
+                network_error = True
                 continue
-        return None
+        if error_codes:
+            raise RuntimeError(f"OAuth 令牌刷新失败（{', '.join(sorted(error_codes))}）；请检查应用权限或重新授权")
+        if network_error:
+            raise RuntimeError("OAuth 令牌刷新失败：无法连接或解析微软认证服务，请检查网络后重试")
+        raise RuntimeError("OAuth 令牌刷新失败：微软认证服务未返回有效令牌，请检查凭据与授权")
 
     def _select_folder(self, imap_conn: imaplib.IMAP4_SSL, folder: str) -> str:
         """AI by zb: 根据 folder 类型自动选择 Outlook 中实际可用的文件夹。"""
