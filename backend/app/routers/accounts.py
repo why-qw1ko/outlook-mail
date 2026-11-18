@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import Session, select
 
 from ..auth import require_admin_authorization
@@ -37,6 +38,7 @@ from ..schemas import (
     ReleaseAccountUsageRequest,
     UpdateAccountRequest,
 )
+from ..services.mail_sync_service import persist_rotated_refresh_token
 from ..services.site_usage_service import (
     count_pool_and_consumed_accounts,
     get_active_account_site_usage,
@@ -599,12 +601,31 @@ def update_account(
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ):
-    """AI by zb: 更新指定邮箱的置顶、备注、启停与分组信息。"""
+    """Update one mailbox's settings or replace its credentials."""
     require_admin_authorization(authorization)
     site_map = load_site_map(session)
     account = _get_account_or_404(session, account_id)
 
+    password = request.password.get_secret_value().strip() if request.password is not None else ""
+    client_id = (request.client_id or "").strip()
+    refresh_token = request.refresh_token.get_secret_value().strip() if request.refresh_token is not None else ""
+    if bool(client_id) != bool(refresh_token):
+        raise HTTPException(status_code=400, detail="Client ID 和 Refresh Token 必须同时填写")
+
+    if "group_site_id" in request.model_fields_set:
+        group_site = _resolve_group_site(session, request.group_site_id)
+        account.group_site_id = group_site.id if group_site else None
+
     now = utcnow()
+
+    if password:
+        account.password = password
+    if client_id:
+        account.client_id = client_id
+        account.refresh_token = refresh_token
+        # Write both columns even if one matches the value originally loaded by this session.
+        flag_modified(account, "client_id")
+        flag_modified(account, "refresh_token")
 
     if request.note is not None:
         account.note = request.note.strip()
@@ -625,9 +646,6 @@ def update_account(
 
     if request.batch_code is not None:
         account.batch_code = request.batch_code.strip()
-    if "group_site_id" in request.model_fields_set:
-        group_site = _resolve_group_site(session, request.group_site_id)
-        account.group_site_id = group_site.id if group_site else None
 
     account.updated_at = now
     session.add(account)
@@ -649,10 +667,7 @@ def validate_account_oauth(
     try:
         connection = service._open_imap_connection()
         service._safe_logout(connection)
-        token = service.refresh_token_for_storage()
-        if token and token != account.refresh_token:
-            account.refresh_token = token
-            session.add(account)
+        if persist_rotated_refresh_token(session, account, service.refresh_token_for_storage()):
             session.commit()
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

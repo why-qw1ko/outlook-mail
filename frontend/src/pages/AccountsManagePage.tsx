@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { Badge, Label, Select } from '@/components/ui/primitives'
 import { Dialog } from '@/components/common/AppDialog'
+import { AccountEditDialog } from '@/components/common/AccountEditDialog'
 import { useConfirm } from '@/components/common/ConfirmDialog'
 import { useToast } from '@/components/ui/toast'
 import { EmptyState, LoadingState, SearchEmpty } from '@/components/common/states'
@@ -58,7 +59,7 @@ export function AccountsManagePage() {
   const [groupFilter, setGroupFilter] = useState('')
   const [sites, setSites] = useState<SiteItem[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-  const [selectAllPage, setSelectAllPage] = useState(false)
+  const [editingAccount, setEditingAccount] = useState<AccountItem | null>(null)
 
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState('')
@@ -87,9 +88,9 @@ export function AccountsManagePage() {
     return () => { cancelled = true }
   }, [toast])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background = false) => {
     const sequence = ++loadSequence.current
-    setLoading(true)
+    if (!background) setLoading(true)
     try {
       const result = await fetchAccounts({
         page,
@@ -107,8 +108,9 @@ export function AccountsManagePage() {
       setItems(result.items)
       setTotal(result.total)
       setTotalPages(result.total_pages)
-      setSelectedIds(new Set())
-      setSelectAllPage(false)
+      setSelectedIds((current) => new Set(
+        background ? result.items.filter((item) => current.has(item.id)).map((item) => item.id) : [],
+      ))
     } catch (error) {
       if (sequence === loadSequence.current) {
         toast.error(error instanceof Error ? error.message : '加载邮箱失败')
@@ -118,7 +120,9 @@ export function AccountsManagePage() {
     }
   }, [page, scope, groupFilter, searchKeyword, toast])
 
+  const latestLoad = useRef(load)
   useEffect(() => {
+    latestLoad.current = load
     void load()
   }, [load])
 
@@ -132,6 +136,7 @@ export function AccountsManagePage() {
     () => items.filter((item) => selectedIds.has(item.id)),
     [items, selectedIds],
   )
+  const selectAllPage = items.length > 0 && selectedItems.length === items.length
 
   const toggleRow = (id: number) => {
     setSelectedIds((current) => {
@@ -140,17 +145,14 @@ export function AccountsManagePage() {
       else next.add(id)
       return next
     })
-    setSelectAllPage(false)
   }
 
   const toggleSelectPage = () => {
     if (selectAllPage) {
       setSelectedIds(new Set())
-      setSelectAllPage(false)
       return
     }
     setSelectedIds(new Set(items.map((item) => item.id)))
-    setSelectAllPage(true)
   }
 
   const copySelected = async (mode: CopyMode) => {
@@ -568,6 +570,9 @@ export function AccountsManagePage() {
                         </TableCell>
                         <TableCell className="px-3 py-2.5">
                           <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => setEditingAccount(item)}>
+                              编辑
+                            </Button>
                             <Button variant="ghost" size="sm" disabled={validatingId !== null} loading={validatingId === item.id} onClick={async () => {
                               setValidatingId(item.id)
                               try {
@@ -658,6 +663,19 @@ export function AccountsManagePage() {
           e.target.value = ''
         }}
       />
+
+      {editingAccount && (
+        <AccountEditDialog
+          account={editingAccount}
+          sites={sites}
+          onClose={() => setEditingAccount(null)}
+          onSaved={() => {
+            setEditingAccount(null)
+            toast.success('邮箱已更新')
+            void latestLoad.current(true)
+          }}
+        />
+      )}
 
       <Dialog
         open={importOpen}

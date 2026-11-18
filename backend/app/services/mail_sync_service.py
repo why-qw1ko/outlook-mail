@@ -8,6 +8,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Iterable, Sequence
 
+from sqlalchemy import update
 from sqlmodel import Session, select
 
 from ..database import session_scope
@@ -144,6 +145,24 @@ def _build_sync_response(account_id: int, synced_at: datetime, results: dict[str
     )
 
 
+def persist_rotated_refresh_token(session: Session, account: OutlookAccount, refresh_token: str) -> bool:
+    """Stage a rotated token only while the credentials used by the request still match."""
+    if not refresh_token or refresh_token == account.refresh_token:
+        return False
+
+    result = session.exec(
+        update(OutlookAccount)
+        .where(
+            OutlookAccount.id == account.id,
+            OutlookAccount.client_id == account.client_id,
+            OutlookAccount.refresh_token == account.refresh_token,
+        )
+        .values(refresh_token=refresh_token)
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount > 0
+
+
 def _sync_account_mailbox_locked(
     session: Session,
     account: OutlookAccount,
@@ -167,9 +186,7 @@ def _sync_account_mailbox_locked(
             _upsert_message(session, account.id, item)
         _set_folder_last_uid(account, folder, result.high_water_uid)
 
-    next_refresh_token = service.refresh_token_for_storage()
-    if next_refresh_token and next_refresh_token != account.refresh_token:
-        account.refresh_token = next_refresh_token
+    persist_rotated_refresh_token(session, account, service.refresh_token_for_storage())
 
     account.last_synced_at = utcnow()
     account.updated_at = utcnow()

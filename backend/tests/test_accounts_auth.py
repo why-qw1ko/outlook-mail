@@ -3,12 +3,14 @@
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 
+from fastapi import HTTPException
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from backend.app import database
 from backend.app.models import AccountSiteUsage, OutlookAccount, Site
 from backend.app.routers import accounts
 from backend.app.schemas import BatchUpdateAccountsRequest, ImportAccountsRequest, UpdateAccountRequest
+from backend.app.services.mail_sync_service import persist_rotated_refresh_token
 from backend.app.services.outlook_service import OutlookService
 
 
@@ -67,6 +69,62 @@ class AccountManagementTests(unittest.TestCase):
         self.session.commit()
         self.assertEqual(len(accounts._collect_visible_accounts(self.session, "", "all", "", "")), 0)
         self.assertEqual(len(accounts._collect_visible_accounts(self.session, "", "all", "", "", include_disabled=True)), 1)
+
+    def test_account_edit_preserves_blank_credentials_and_supports_replacement(self):
+        account = OutlookAccount(email="a@example.com", password="old", client_id="app", refresh_token="token")
+        self.session.add(account)
+        self.session.commit()
+        updated = accounts.update_account(
+            account.id,
+            UpdateAccountRequest(note="  Personal  ", batch_code="  2026  ", password=" "),
+            session=self.session,
+        )
+        self.assertEqual((updated.note, updated.batch_code), ("Personal", "2026"))
+        self.assertEqual((account.password, account.client_id, account.refresh_token), ("old", "app", "token"))
+
+        updated = accounts.update_account(
+            account.id,
+            UpdateAccountRequest(password=" new ", client_id=" new-app ", refresh_token=" new-token "),
+            session=self.session,
+        )
+        self.assertEqual((account.password, account.client_id, account.refresh_token), ("new", "new-app", "new-token"))
+        self.assertEqual(updated.password, "")
+        self.assertNotIn("refresh_token", updated.model_dump())
+
+    def test_incomplete_oauth_edit_does_not_apply_other_changes(self):
+        account = OutlookAccount(email="a@example.com", note="old", client_id="app", refresh_token="token")
+        self.session.add(account)
+        self.session.commit()
+
+        with self.assertRaises(HTTPException) as error:
+            accounts.update_account(
+                account.id,
+                UpdateAccountRequest(note="new", refresh_token="replacement"),
+                session=self.session,
+            )
+
+        self.assertEqual(error.exception.status_code, 400)
+        self.assertNotIn("replacement", error.exception.detail)
+        self.assertEqual((account.note, account.refresh_token), ("old", "token"))
+
+    def test_token_rotation_does_not_overwrite_concurrent_credential_edit(self):
+        account = OutlookAccount(email="a@example.com", client_id="app", refresh_token="token")
+        self.session.add(account)
+        self.session.commit()
+        account_id = account.id
+        with Session(self.engine) as editing_session:
+            accounts.update_account(
+                account_id,
+                UpdateAccountRequest(client_id="new-app", refresh_token="new-token"),
+                session=editing_session,
+            )
+
+        self.assertFalse(persist_rotated_refresh_token(self.session, account, "stale-rotation"))
+        self.session.refresh(account)
+        self.assertEqual((account.client_id, account.refresh_token), ("new-app", "new-token"))
+        self.assertTrue(persist_rotated_refresh_token(self.session, account, "fresh-rotation"))
+        self.session.commit()
+        self.assertEqual(account.refresh_token, "fresh-rotation")
 
     def test_legacy_database_visibility_defaults_to_visible(self):
         engine = create_engine("sqlite://")

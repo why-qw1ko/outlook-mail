@@ -188,17 +188,19 @@ export function fetchAccountDetail(accountId: number) {
   return apiFetch<AccountDetail>(`/api/accounts/${accountId}`)
 }
 
-export function updateAccount(
-  accountId: number,
-  payload: {
-    enabled?: boolean
-    show_in_station?: boolean
-    note?: string
-    is_pinned?: boolean
-    batch_code?: string
-    group_site_id?: number | null
-  },
-) {
+export interface UpdateAccountPayload {
+  enabled?: boolean
+  show_in_station?: boolean
+  note?: string
+  is_pinned?: boolean
+  batch_code?: string
+  group_site_id?: number | null
+  password?: string
+  client_id?: string
+  refresh_token?: string
+}
+
+export function updateAccount(accountId: number, payload: UpdateAccountPayload) {
   return apiFetch<AccountDetail>(`/api/accounts/${accountId}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),

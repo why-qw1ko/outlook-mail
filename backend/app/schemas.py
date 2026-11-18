@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 
 class UserIdentityResponse(BaseModel):
@@ -203,7 +203,7 @@ class AccountDetailResponse(AccountListItem):
 
 
 class UpdateAccountRequest(BaseModel):
-    """AI by zb: 定义账号启停、备注、分组修改的请求体。"""
+    """Apply changes to mailbox settings and optionally replace credentials."""
 
     enabled: Optional[bool] = None
     show_in_station: Optional[bool] = None
@@ -211,6 +211,9 @@ class UpdateAccountRequest(BaseModel):
     is_pinned: Optional[bool] = None
     batch_code: Optional[str] = None
     group_site_id: Optional[int] = None
+    password: Optional[SecretStr] = None
+    client_id: Optional[str] = None
+    refresh_token: Optional[SecretStr] = None
 
 
 class BatchUpdateAccountsRequest(BaseModel):
